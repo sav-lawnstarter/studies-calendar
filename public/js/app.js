@@ -7,8 +7,7 @@ let state = {
     archive: [],
     competitors: [],
     currentView: 'week',
-    currentDate: new Date(),
-    oooMonth: new Date()
+    currentDate: new Date()
 };
 
 // API Functions
@@ -49,8 +48,6 @@ async function init() {
     setupModals();
     setupEventListeners();
     renderCalendar();
-    renderOooCalendar();
-    renderBlockedDates();
     renderTotals();
     renderArchive();
     renderCompetitors();
@@ -129,16 +126,6 @@ function setupEventListeners() {
     document.getElementById('todayBtn').addEventListener('click', () => {
         state.currentDate = new Date();
         renderCalendar();
-    });
-
-    // OOO calendar navigation
-    document.getElementById('prevOooMonth').addEventListener('click', () => {
-        state.oooMonth.setMonth(state.oooMonth.getMonth() - 1);
-        renderOooCalendar();
-    });
-    document.getElementById('nextOooMonth').addEventListener('click', () => {
-        state.oooMonth.setMonth(state.oooMonth.getMonth() + 1);
-        renderOooCalendar();
     });
 
     // Add buttons
@@ -799,7 +786,6 @@ async function handleOooSubmit(e) {
         const newOoo = await postData('ooo', oooData);
         state.ooo.push(newOoo);
         closeModal('oooModal');
-        renderOooCalendar();
         renderCalendar();
     } catch (error) {
         console.error('Failed to add OOO:', error);
@@ -819,7 +805,6 @@ async function handleBlockedSubmit(e) {
         const newBlocked = await postData('blocked-dates', blockedData);
         state.blockedDates.push(newBlocked);
         closeModal('blockedModal');
-        renderBlockedDates();
         renderCalendar();
     } catch (error) {
         console.error('Failed to add blocked date:', error);
@@ -943,7 +928,6 @@ window.deleteOoo = async function(id) {
     try {
         await deleteData('ooo', id);
         state.ooo = state.ooo.filter(o => o.id !== id);
-        renderOooCalendar();
         renderCalendar();
     } catch (error) {
         console.error('Failed to delete OOO:', error);
@@ -954,7 +938,6 @@ window.deleteBlockedDate = async function(id) {
     try {
         await deleteData('blocked-dates', id);
         state.blockedDates = state.blockedDates.filter(b => b.id !== id);
-        renderBlockedDates();
         renderCalendar();
     } catch (error) {
         console.error('Failed to delete blocked date:', error);
