@@ -586,42 +586,109 @@ body {
 }
 
 /* Archive */
-.archive-item {
+.archive-list {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
+    gap: 1rem;
 }
 
-.archive-header {
+.archive-card {
+    background: var(--surface);
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-color);
+    padding: 1.25rem;
+}
+
+.archive-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.archive-card-header {
     display: flex;
     justify-content: space-between;
-    width: 100%;
     align-items: flex-start;
+    margin-bottom: 1rem;
 }
 
-.archive-metrics {
+.archive-card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.archive-card-title h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.archive-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.75rem;
+    background: var(--background);
+    border-radius: 0.375rem;
+    padding: 0.875rem;
+    margin-bottom: 0.75rem;
+}
+
+.metric-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.metric-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 0.25rem;
+}
+
+.metric-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.archive-dates {
     display: flex;
     gap: 1.5rem;
-    margin-top: 0.5rem;
-}
-
-.archive-metric {
-    font-size: 0.875rem;
-}
-
-.archive-metric-label {
+    font-size: 0.8rem;
     color: var(--text-secondary);
+    margin-bottom: 0.5rem;
 }
 
-.archive-metric-value {
-    font-weight: 600;
+.archive-url {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--primary-color);
+    word-break: break-all;
+    margin-top: 0.5rem;
 }
 
 .archive-feedback {
     font-size: 0.875rem;
     color: var(--text-secondary);
     font-style: italic;
-    margin-top: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 900px) {
+    .archive-metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .archive-metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 /* Competitor */

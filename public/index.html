@@ -213,12 +213,6 @@
                         <input type="date" id="productionDate">
                     </div>
                     <div class="form-group">
-                        <label for="writerAssigned">Writer Assigned</label>
-                        <select id="writerAssigned">
-                            <option value="">Select Writer</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
                         <label for="expertsContacted">Number of Experts Contacted</label>
                         <input type="number" id="expertsContacted" min="0">
                     </div>
@@ -277,10 +271,8 @@
             </div>
             <form id="oooForm" class="modal-form">
                 <div class="form-group">
-                    <label for="oooMember">Team Member *</label>
-                    <select id="oooMember" required>
-                        <option value="">Select Team Member</option>
-                    </select>
+                    <label for="oooName">Name *</label>
+                    <input type="text" id="oooName" required placeholder="Enter your name">
                 </div>
                 <div class="form-group">
                     <label for="oooStartDate">Start Date *</label>
@@ -289,10 +281,6 @@
                 <div class="form-group">
                     <label for="oooEndDate">End Date *</label>
                     <input type="date" id="oooEndDate" required>
-                </div>
-                <div class="form-group">
-                    <label for="oooReason">Reason</label>
-                    <input type="text" id="oooReason" placeholder="Vacation, sick leave, etc.">
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
@@ -370,6 +358,22 @@
                     <div class="form-group">
                         <label for="archivePageviews">Google Analytics Pageviews</label>
                         <input type="number" id="archivePageviews" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveCtr">Click Through Rate (%)</label>
+                        <input type="number" id="archiveCtr" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveDomainAuthority">Domain Authority of Pickups</label>
+                        <input type="number" id="archiveDomainAuthority" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveImpressions">Google Impressions</label>
+                        <input type="number" id="archiveImpressions" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="archivePosition">Google Position</label>
+                        <input type="number" id="archivePosition" min="0" step="0.1">
                     </div>
                 </div>
                 <div class="form-group full-width">

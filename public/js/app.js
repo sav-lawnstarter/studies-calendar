@@ -55,7 +55,6 @@ async function init() {
     renderArchive();
     renderCompetitors();
     renderTeam();
-    populateWriterDropdown();
 }
 
 async function loadAllData() {
@@ -148,7 +147,6 @@ function setupEventListeners() {
         openModal('storyModal');
     });
     document.getElementById('addOooBtn').addEventListener('click', () => {
-        populateOooMemberDropdown();
         openModal('oooModal');
     });
     document.getElementById('addBlockedBtn').addEventListener('click', () => openModal('blockedModal'));
@@ -353,9 +351,14 @@ function renderCalendarDay(date, isOtherMonth = false) {
     }
 
     oooForDay.forEach(ooo => {
-        const member = state.team.find(t => t.id === ooo.memberId);
-        if (member) {
-            html += `<div class="day-ooo">${member.name} OOO</div>`;
+        // Support both old (memberId) and new (name) format
+        let displayName = ooo.name;
+        if (!displayName && ooo.memberId) {
+            const member = state.team.find(t => t.id === ooo.memberId);
+            displayName = member ? member.name : null;
+        }
+        if (displayName) {
+            html += `<div class="day-ooo">${displayName} OOO</div>`;
         }
     });
 
@@ -391,7 +394,6 @@ function renderStoryList(container) {
                         <span class="story-brand ${brandClass}">${story.brand || 'No Brand'}</span>
                         <span class="story-status status-${story.status || 'planning'}">${story.status || 'Planning'}</span>
                         ${story.productionDate ? `<span>Prod: ${formatDate(new Date(story.productionDate), 'short')}</span>` : ''}
-                        ${story.writerAssigned ? `<span>Writer: ${getTeamMemberName(story.writerAssigned)}</span>` : ''}
                     </div>
                 </div>
                 <div class="story-actions">
@@ -455,12 +457,17 @@ function renderOooList() {
 
     let html = '';
     sortedOoo.forEach(ooo => {
-        const member = state.team.find(t => t.id === ooo.memberId);
+        // Support both old (memberId) and new (name) format
+        let displayName = ooo.name;
+        if (!displayName && ooo.memberId) {
+            const member = state.team.find(t => t.id === ooo.memberId);
+            displayName = member ? member.name : 'Unknown';
+        }
         html += `
             <div class="ooo-item">
                 <div class="ooo-info">
-                    <div class="ooo-name">${member ? member.name : 'Unknown'}</div>
-                    <div class="ooo-dates">${formatDate(new Date(ooo.startDate), 'short')} - ${formatDate(new Date(ooo.endDate), 'short')}${ooo.reason ? ` (${ooo.reason})` : ''}</div>
+                    <div class="ooo-name">${displayName || 'Unknown'}</div>
+                    <div class="ooo-dates">${formatDate(new Date(ooo.startDate), 'short')} - ${formatDate(new Date(ooo.endDate), 'short')}</div>
                 </div>
                 <button class="btn btn-danger btn-small" onclick="deleteOoo('${ooo.id}')">Remove</button>
             </div>`;
@@ -571,10 +578,10 @@ function renderArchive(searchTerm = '') {
     let html = '';
     filtered.forEach(item => {
         html += `
-            <div class="archive-item">
-                <div class="archive-header">
-                    <div class="archive-info">
-                        <div class="archive-title-text">${item.title}</div>
+            <div class="archive-card">
+                <div class="archive-card-header">
+                    <div class="archive-card-title">
+                        <h3>${item.title}</h3>
                         <span class="story-brand ${getBrandClass(item.brand)}">${item.brand || 'No Brand'}</span>
                     </div>
                     <div class="story-actions">
@@ -582,19 +589,37 @@ function renderArchive(searchTerm = '') {
                         <button class="btn btn-danger btn-small" onclick="deleteArchive('${item.id}')">Delete</button>
                     </div>
                 </div>
-                <div class="archive-metrics">
-                    <div class="archive-metric">
-                        <span class="archive-metric-label">Links: </span>
-                        <span class="archive-metric-value">${item.linkCount || 0}</span>
+                <div class="archive-metrics-grid">
+                    <div class="metric-item">
+                        <span class="metric-label">Links</span>
+                        <span class="metric-value">${item.linkCount || 0}</span>
                     </div>
-                    <div class="archive-metric">
-                        <span class="archive-metric-label">Pageviews: </span>
-                        <span class="archive-metric-value">${item.pageviews ? item.pageviews.toLocaleString() : 0}</span>
+                    <div class="metric-item">
+                        <span class="metric-label">Pageviews</span>
+                        <span class="metric-value">${item.pageviews ? item.pageviews.toLocaleString() : 0}</span>
                     </div>
-                    ${item.publishDate ? `<div class="archive-metric"><span class="archive-metric-label">Published: </span><span class="archive-metric-value">${formatDate(new Date(item.publishDate), 'short')}</span></div>` : ''}
-                    ${item.refreshDate ? `<div class="archive-metric"><span class="archive-metric-label">Refreshed: </span><span class="archive-metric-value">${formatDate(new Date(item.refreshDate), 'short')}</span></div>` : ''}
+                    <div class="metric-item">
+                        <span class="metric-label">CTR</span>
+                        <span class="metric-value">${item.ctr ? item.ctr.toFixed(2) + '%' : '-'}</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Domain Auth</span>
+                        <span class="metric-value">${item.domainAuthority || '-'}</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Impressions</span>
+                        <span class="metric-value">${item.impressions ? item.impressions.toLocaleString() : '-'}</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Position</span>
+                        <span class="metric-value">${item.position ? item.position.toFixed(1) : '-'}</span>
+                    </div>
                 </div>
-                ${item.url ? `<a href="${item.url}" target="_blank" class="competitor-url">${item.url}</a>` : ''}
+                <div class="archive-dates">
+                    ${item.publishDate ? `<span>Published: ${formatDate(new Date(item.publishDate), 'short')}</span>` : ''}
+                    ${item.refreshDate ? `<span>Refreshed: ${formatDate(new Date(item.refreshDate), 'short')}</span>` : ''}
+                </div>
+                ${item.url ? `<a href="${item.url}" target="_blank" class="archive-url">${item.url}</a>` : ''}
                 ${item.feedback ? `<div class="archive-feedback">"${item.feedback}"</div>` : ''}
             </div>`;
     });
@@ -726,21 +751,6 @@ function renderTeam() {
     container.innerHTML = html;
 }
 
-function populateWriterDropdown() {
-    const select = document.getElementById('writerAssigned');
-    select.innerHTML = '<option value="">Select Writer</option>';
-    state.team.forEach(member => {
-        select.innerHTML += `<option value="${member.id}">${member.name} (${member.role})</option>`;
-    });
-}
-
-function populateOooMemberDropdown() {
-    const select = document.getElementById('oooMember');
-    select.innerHTML = '<option value="">Select Team Member</option>';
-    state.team.forEach(member => {
-        select.innerHTML += `<option value="${member.id}">${member.name}</option>`;
-    });
-}
 
 // Form Handlers
 async function handleStorySubmit(e) {
@@ -756,7 +766,6 @@ async function handleStorySubmit(e) {
         editsDueBy: document.getElementById('editsDueBy').value,
         qaDueBy: document.getElementById('qaDueBy').value,
         productionDate: document.getElementById('productionDate').value,
-        writerAssigned: document.getElementById('writerAssigned').value,
         expertsContacted: parseInt(document.getElementById('expertsContacted').value) || 0,
         status: document.getElementById('status').value,
         notesBlockers: document.getElementById('notesBlockers').value,
@@ -789,10 +798,9 @@ async function handleOooSubmit(e) {
     e.preventDefault();
 
     const oooData = {
-        memberId: document.getElementById('oooMember').value,
+        name: document.getElementById('oooName').value,
         startDate: document.getElementById('oooStartDate').value,
-        endDate: document.getElementById('oooEndDate').value,
-        reason: document.getElementById('oooReason').value
+        endDate: document.getElementById('oooEndDate').value
     };
 
     try {
@@ -836,6 +844,10 @@ async function handleArchiveSubmit(e) {
         refreshDate: document.getElementById('archiveRefreshDate').value,
         linkCount: parseInt(document.getElementById('archiveLinkCount').value) || 0,
         pageviews: parseInt(document.getElementById('archivePageviews').value) || 0,
+        ctr: parseFloat(document.getElementById('archiveCtr').value) || 0,
+        domainAuthority: parseInt(document.getElementById('archiveDomainAuthority').value) || 0,
+        impressions: parseInt(document.getElementById('archiveImpressions').value) || 0,
+        position: parseFloat(document.getElementById('archivePosition').value) || 0,
         url: document.getElementById('archiveUrl').value,
         feedback: document.getElementById('archiveFeedback').value
     };
@@ -873,7 +885,6 @@ async function handleTeamSubmit(e) {
         state.team.push(newMember);
         closeModal('teamModal');
         renderTeam();
-        populateWriterDropdown();
     } catch (error) {
         console.error('Failed to add team member:', error);
     }
@@ -895,7 +906,6 @@ window.editStory = function(id) {
     document.getElementById('editsDueBy').value = story.editsDueBy || '';
     document.getElementById('qaDueBy').value = story.qaDueBy || '';
     document.getElementById('productionDate').value = story.productionDate || '';
-    document.getElementById('writerAssigned').value = story.writerAssigned || '';
     document.getElementById('expertsContacted').value = story.expertsContacted || '';
     document.getElementById('status').value = story.status || 'planning';
     document.getElementById('notesBlockers').value = story.notesBlockers || '';
@@ -919,6 +929,10 @@ window.editArchive = function(id) {
     document.getElementById('archiveRefreshDate').value = item.refreshDate || '';
     document.getElementById('archiveLinkCount').value = item.linkCount || '';
     document.getElementById('archivePageviews').value = item.pageviews || '';
+    document.getElementById('archiveCtr').value = item.ctr || '';
+    document.getElementById('archiveDomainAuthority').value = item.domainAuthority || '';
+    document.getElementById('archiveImpressions').value = item.impressions || '';
+    document.getElementById('archivePosition').value = item.position || '';
     document.getElementById('archiveUrl').value = item.url || '';
     document.getElementById('archiveFeedback').value = item.feedback || '';
 
@@ -991,7 +1005,6 @@ window.deleteTeamMember = async function(id) {
         await deleteData('team', id);
         state.team = state.team.filter(t => t.id !== id);
         renderTeam();
-        populateWriterDropdown();
     } catch (error) {
         console.error('Failed to delete team member:', error);
     }
