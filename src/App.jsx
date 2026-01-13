@@ -4,7 +4,6 @@ import ContentCalendar from './components/ContentCalendar';
 import RunningTotals from './components/RunningTotals';
 import StoryArchive from './components/StoryArchive';
 import CompetitorLog from './components/CompetitorLog';
-import TeamMembers from './components/TeamMembers';
 
 function App() {
   const [activeView, setActiveView] = useState('content-calendar');
@@ -19,8 +18,6 @@ function App() {
         return <StoryArchive />;
       case 'competitor-log':
         return <CompetitorLog />;
-      case 'team-members':
-        return <TeamMembers />;
       default:
         return <ContentCalendar />;
     }

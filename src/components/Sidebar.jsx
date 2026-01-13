@@ -1,12 +1,11 @@
 import React from 'react';
-import { Calendar, BarChart3, Archive, Users, FileText, ChevronRight } from 'lucide-react';
+import { Calendar, BarChart3, Archive, FileText, ChevronRight } from 'lucide-react';
 
 const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
   { id: 'running-totals', label: 'Running Totals', icon: BarChart3 },
   { id: 'story-archive', label: 'Story Archive', icon: Archive },
   { id: 'competitor-log', label: 'Competitor Log', icon: FileText },
-  { id: 'team-members', label: 'Team Members', icon: Users },
 ];
 
 export default function Sidebar({ activeView, setActiveView }) {
@@ -60,17 +59,10 @@ export default function Sidebar({ activeView, setActiveView }) {
       {/* Footer */}
       <div className="p-4 border-t border-white/20">
         <div className="bg-ls-green-dark rounded-lg p-3">
-          <p className="text-white/80 text-xs mb-2">Content Stats</p>
-          <div className="grid grid-cols-2 gap-2 text-center">
-            <div className="bg-white/10 rounded p-2">
-              <p className="text-white font-bold text-lg">12</p>
-              <p className="text-white/60 text-xs">In Progress</p>
-            </div>
-            <div className="bg-white/10 rounded p-2">
-              <p className="text-white font-bold text-lg">47</p>
-              <p className="text-white/60 text-xs">Published</p>
-            </div>
-          </div>
+          <p className="text-white/80 text-xs mb-2">Editorial Dashboard</p>
+          <p className="text-white/60 text-xs text-center">
+            Add stories to see stats
+          </p>
         </div>
       </div>
     </aside>

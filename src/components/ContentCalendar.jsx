@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   format,
   startOfMonth,
@@ -19,16 +19,72 @@ import {
   addQuarters,
   subQuarters,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
 
 const viewModes = ['Week', 'Month', 'Quarter'];
 
+// localStorage keys
+const STORAGE_KEYS = {
+  blockedDates: 'editorial-blocked-dates',
+  hiddenEvents: 'editorial-hidden-events',
+  eventOverrides: 'editorial-event-overrides',
+};
+
+// Load data from localStorage
+const loadFromStorage = (key, defaultValue) => {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+};
+
+// Save data to localStorage
+const saveToStorage = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error('Failed to save to localStorage:', e);
+  }
+};
+
 export default function ContentCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('Month');
   const [selectedStory, setSelectedStory] = useState(null);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [showEventModal, setShowEventModal] = useState(false);
+
+  // Persistent state for custom blocked dates
+  const [customBlockedDates, setCustomBlockedDates] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.blockedDates, [])
+  );
+
+  // Persistent state for hidden events (deleted events)
+  const [hiddenEvents, setHiddenEvents] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.hiddenEvents, [])
+  );
+
+  // Persistent state for event type overrides (toggled between blocked/highTraffic)
+  const [eventOverrides, setEventOverrides] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.eventOverrides, {})
+  );
+
+  // Save to localStorage whenever state changes
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.blockedDates, customBlockedDates);
+  }, [customBlockedDates]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.hiddenEvents, hiddenEvents);
+  }, [hiddenEvents]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.eventOverrides, eventOverrides);
+  }, [eventOverrides]);
 
   // Combine all events
   const allEvents = useMemo(() => {
@@ -51,24 +107,43 @@ export default function ContentCalendar() {
       });
     });
 
-    // Add blocked dates
+    // Add blocked dates from data file
     sampleBlockedDates.forEach((blocked) => {
-      events.push({
-        ...blocked,
-        displayType: 'blocked',
-      });
+      if (!hiddenEvents.includes(blocked.id)) {
+        const override = eventOverrides[blocked.id];
+        events.push({
+          ...blocked,
+          type: override?.type || blocked.type,
+          displayType: override?.type || 'blocked',
+        });
+      }
     });
 
-    // Add preloaded events (holidays, sports, etc.)
+    // Add custom blocked dates
+    customBlockedDates.forEach((blocked) => {
+      if (!hiddenEvents.includes(blocked.id)) {
+        events.push({
+          ...blocked,
+          displayType: blocked.type,
+        });
+      }
+    });
+
+    // Add preloaded events (holidays, sports, etc.) - filter out hidden ones and apply overrides
     preloadedEvents.forEach((event) => {
-      events.push({
-        ...event,
-        displayType: event.type,
-      });
+      if (!hiddenEvents.includes(event.id)) {
+        const override = eventOverrides[event.id];
+        const effectiveType = override?.type || event.type;
+        events.push({
+          ...event,
+          type: effectiveType,
+          displayType: effectiveType,
+        });
+      }
     });
 
     return events;
-  }, []);
+  }, [customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -180,33 +255,184 @@ export default function ContentCalendar() {
     }
   };
 
-  const handleEventClick = (event) => {
+  const handleEventClick = (event, e) => {
+    e.stopPropagation();
     if (event.displayType === 'story') {
       // Find the full story data
       const fullStory = sampleStories.find((s) => s.id === event.id);
       setSelectedStory(fullStory);
+    } else if (['blocked', 'highTraffic', 'holiday'].includes(event.displayType)) {
+      // Open edit modal for blocked dates and high traffic events
+      setSelectedEvent(event);
+      setShowEventModal(true);
     }
+  };
+
+  // Delete/hide an event
+  const handleDeleteEvent = (eventId) => {
+    setHiddenEvents(prev => [...prev, eventId]);
+    setShowEventModal(false);
+    setSelectedEvent(null);
+  };
+
+  // Toggle event type between blocked and highTraffic
+  const handleToggleEventType = (eventId, currentType) => {
+    const newType = currentType === 'blocked' ? 'highTraffic' :
+                    currentType === 'highTraffic' ? 'blocked' :
+                    currentType;
+
+    setEventOverrides(prev => ({
+      ...prev,
+      [eventId]: { type: newType }
+    }));
+
+    // Update selected event to reflect the change
+    setSelectedEvent(prev => prev ? { ...prev, type: newType, displayType: newType } : null);
+  };
+
+  // Restore a hidden event
+  const handleRestoreEvent = (eventId) => {
+    setHiddenEvents(prev => prev.filter(id => id !== eventId));
+  };
+
+  // Clear all customizations for an event
+  const handleResetEvent = (eventId) => {
+    setEventOverrides(prev => {
+      const newOverrides = { ...prev };
+      delete newOverrides[eventId];
+      return newOverrides;
+    });
+    setHiddenEvents(prev => prev.filter(id => id !== eventId));
   };
 
   const renderEvent = (event) => {
     const style = getEventStyle(event.displayType);
-    const isClickable = event.displayType === 'story';
+    const isClickable = ['story', 'blocked', 'highTraffic', 'holiday'].includes(event.displayType);
 
     return (
       <div
         key={event.id}
-        onClick={() => handleEventClick(event)}
+        onClick={(e) => handleEventClick(event, e)}
         className={`
           text-xs px-2 py-1 rounded truncate mb-1 event-item
           ${style}
-          ${isClickable ? 'cursor-pointer' : ''}
+          ${isClickable ? 'cursor-pointer hover:opacity-90' : ''}
         `}
-        title={event.title}
+        title={`${event.title}${isClickable && event.displayType !== 'story' ? ' (click to edit)' : ''}`}
       >
         {event.title}
       </div>
     );
   };
+
+  // Event Edit Modal
+  const EventEditModal = () => {
+    if (!showEventModal || !selectedEvent) return null;
+
+    const isCustomEvent = selectedEvent.id?.startsWith('custom-');
+    const hasOverride = eventOverrides[selectedEvent.id];
+    const canToggle = ['blocked', 'highTraffic'].includes(selectedEvent.displayType);
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEventModal(false)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">Edit Event</h3>
+            <button
+              onClick={() => setShowEventModal(false)}
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Event Name</label>
+              <p className="text-gray-900">{selectedEvent.title}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <p className="text-gray-900">
+                {format(parseISO(selectedEvent.date), 'MMMM d, yyyy')}
+                {selectedEvent.endDate && ` - ${format(parseISO(selectedEvent.endDate), 'MMMM d, yyyy')}`}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <div className="flex items-center gap-2">
+                <span className={`
+                  px-3 py-1 rounded-full text-sm font-medium
+                  ${selectedEvent.displayType === 'blocked' ? 'bg-ls-orange-light text-ls-orange border border-ls-orange' : ''}
+                  ${selectedEvent.displayType === 'highTraffic' ? 'bg-ls-blue text-white' : ''}
+                  ${selectedEvent.displayType === 'holiday' ? 'bg-gray-100 text-gray-700 border border-gray-300' : ''}
+                `}>
+                  {selectedEvent.displayType === 'blocked' ? 'Blocked' :
+                   selectedEvent.displayType === 'highTraffic' ? 'High Traffic' :
+                   selectedEvent.displayType === 'holiday' ? 'Holiday' : selectedEvent.displayType}
+                </span>
+                {hasOverride && (
+                  <span className="text-xs text-gray-500">(modified)</span>
+                )}
+              </div>
+            </div>
+
+            {selectedEvent.category && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <p className="text-gray-600">{selectedEvent.category}</p>
+              </div>
+            )}
+
+            {selectedEvent.reason && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <p className="text-gray-600">{selectedEvent.reason}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="p-4 border-t bg-gray-50 rounded-b-xl space-y-3">
+            {canToggle && (
+              <button
+                onClick={() => handleToggleEventType(selectedEvent.id, selectedEvent.displayType)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-ls-blue text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                <RefreshCw size={18} />
+                Toggle to {selectedEvent.displayType === 'blocked' ? 'High Traffic' : 'Blocked'}
+              </button>
+            )}
+
+            <button
+              onClick={() => handleDeleteEvent(selectedEvent.id)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+            >
+              <EyeOff size={18} />
+              Hide This Event
+            </button>
+
+            {hasOverride && (
+              <button
+                onClick={() => handleResetEvent(selectedEvent.id)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <RefreshCw size={18} />
+                Reset to Original
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Count hidden events
+  const hiddenCount = hiddenEvents.length;
 
   return (
     <div className="h-full flex flex-col">
@@ -280,30 +506,37 @@ export default function ContentCalendar() {
       </div>
 
       {/* Legend */}
-      <div className="bg-gray-50 px-6 py-2 border-b flex items-center gap-6">
-        <span className="text-sm text-gray-500">Legend:</span>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-ls-green"></div>
-            <span className="text-sm text-gray-600">Stories</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-ls-orange"></div>
-            <span className="text-sm text-gray-600">Team OOO</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-ls-orange-light border border-ls-orange"></div>
-            <span className="text-sm text-gray-600">Blocked Dates</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-ls-blue"></div>
-            <span className="text-sm text-gray-600">High Traffic Days</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-gray-200 border border-gray-300"></div>
-            <span className="text-sm text-gray-600">Holidays</span>
+      <div className="bg-gray-50 px-6 py-2 border-b flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          <span className="text-sm text-gray-500">Legend:</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-ls-green"></div>
+              <span className="text-sm text-gray-600">Stories</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-ls-orange"></div>
+              <span className="text-sm text-gray-600">Team OOO</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-ls-orange-light border border-ls-orange"></div>
+              <span className="text-sm text-gray-600">Blocked Dates</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-ls-blue"></div>
+              <span className="text-sm text-gray-600">High Traffic Days</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-gray-200 border border-gray-300"></div>
+              <span className="text-sm text-gray-600">Holidays</span>
+            </div>
           </div>
         </div>
+        {hiddenCount > 0 && (
+          <div className="text-sm text-gray-500">
+            {hiddenCount} event{hiddenCount !== 1 ? 's' : ''} hidden
+          </div>
+        )}
       </div>
 
       {/* Calendar Grid */}
@@ -375,6 +608,9 @@ export default function ContentCalendar() {
           onClose={() => setSelectedStory(null)}
         />
       )}
+
+      {/* Event Edit Modal */}
+      <EventEditModal />
     </div>
   );
 }
