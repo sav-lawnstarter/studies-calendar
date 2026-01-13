@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editorial Dashboard</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h1>Editorial Dashboard</h1>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item active" data-section="calendar">
+                    <span class="nav-icon">&#128197;</span>
+                    <span>Content Calendar</span>
+                </li>
+                <li class="nav-item" data-section="ooo">
+                    <span class="nav-icon">&#128100;</span>
+                    <span>Team OOO</span>
+                </li>
+                <li class="nav-item" data-section="blocked">
+                    <span class="nav-icon">&#128683;</span>
+                    <span>Blocked Dates</span>
+                </li>
+                <li class="nav-item" data-section="totals">
+                    <span class="nav-icon">&#128200;</span>
+                    <span>Running Totals</span>
+                </li>
+                <li class="nav-item" data-section="archive">
+                    <span class="nav-icon">&#128451;</span>
+                    <span>Story Archive</span>
+                </li>
+                <li class="nav-item" data-section="competitors">
+                    <span class="nav-icon">&#128269;</span>
+                    <span>Competitor Log</span>
+                </li>
+                <li class="nav-item" data-section="team">
+                    <span class="nav-icon">&#128101;</span>
+                    <span>Team Members</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Content Calendar Section -->
+            <section id="calendar" class="section active">
+                <div class="section-header">
+                    <h2>Content Calendar</h2>
+                    <div class="header-actions">
+                        <div class="view-toggle">
+                            <button class="view-btn active" data-view="week">Week</button>
+                            <button class="view-btn" data-view="month">Month</button>
+                            <button class="view-btn" data-view="quarter">Quarter</button>
+                        </div>
+                        <button class="btn btn-primary" id="addStoryBtn">+ Add Story</button>
+                        <button class="btn btn-secondary" onclick="exportData('stories')">Export CSV</button>
+                    </div>
+                </div>
+                <div class="calendar-controls">
+                    <button class="btn btn-icon" id="prevPeriod">&larr;</button>
+                    <span id="currentPeriod" class="period-label"></span>
+                    <button class="btn btn-icon" id="nextPeriod">&rarr;</button>
+                    <button class="btn btn-text" id="todayBtn">Today</button>
+                </div>
+                <div id="calendarContainer" class="calendar-container"></div>
+                <div id="storyList" class="story-list"></div>
+            </section>
+
+            <!-- Team OOO Section -->
+            <section id="ooo" class="section">
+                <div class="section-header">
+                    <h2>Team Out of Office</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" id="addOooBtn">+ Add OOO</button>
+                        <button class="btn btn-secondary" onclick="exportData('ooo')">Export CSV</button>
+                    </div>
+                </div>
+                <div class="ooo-calendar">
+                    <div class="mini-calendar-controls">
+                        <button class="btn btn-icon" id="prevOooMonth">&larr;</button>
+                        <span id="oooMonthLabel" class="period-label"></span>
+                        <button class="btn btn-icon" id="nextOooMonth">&rarr;</button>
+                    </div>
+                    <div id="oooCalendar" class="mini-calendar"></div>
+                </div>
+                <div id="oooList" class="ooo-list"></div>
+            </section>
+
+            <!-- Blocked Dates Section -->
+            <section id="blocked" class="section">
+                <div class="section-header">
+                    <h2>Blocked Dates</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" id="addBlockedBtn">+ Add Blocked Date</button>
+                        <button class="btn btn-secondary" onclick="exportData('blocked-dates')">Export CSV</button>
+                    </div>
+                </div>
+                <p class="section-description">Dates when we don't pitch (holidays, election days, etc.)</p>
+                <div id="blockedList" class="blocked-list"></div>
+            </section>
+
+            <!-- Running Totals Section -->
+            <section id="totals" class="section">
+                <div class="section-header">
+                    <h2>Running Totals</h2>
+                </div>
+                <div id="totalsGrid" class="totals-grid"></div>
+                <div class="totals-chart">
+                    <h3>Published Stories by Brand</h3>
+                    <div id="brandChart" class="brand-chart"></div>
+                </div>
+            </section>
+
+            <!-- Story Archive Section -->
+            <section id="archive" class="section">
+                <div class="section-header">
+                    <h2>Story Archive</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" id="addArchiveBtn">+ Add to Archive</button>
+                        <button class="btn btn-secondary" onclick="exportData('archive')">Export CSV</button>
+                    </div>
+                </div>
+                <p class="section-description">Past and refreshed stories with performance metrics</p>
+                <div class="search-bar">
+                    <input type="text" id="archiveSearch" placeholder="Search archive..." class="search-input">
+                </div>
+                <div id="archiveList" class="archive-list"></div>
+            </section>
+
+            <!-- Competitor Article Log Section -->
+            <section id="competitors" class="section">
+                <div class="section-header">
+                    <h2>Competitor Article Log</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-secondary" onclick="exportData('competitors')">Export CSV</button>
+                    </div>
+                </div>
+                <div class="competitor-input">
+                    <input type="url" id="competitorUrl" placeholder="Paste competitor article URL..." class="url-input">
+                    <button class="btn btn-primary" id="addCompetitorBtn">Add Article</button>
+                </div>
+                <div id="competitorList" class="competitor-list"></div>
+            </section>
+
+            <!-- Team Members Section -->
+            <section id="team" class="section">
+                <div class="section-header">
+                    <h2>Team Members</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" id="addTeamBtn">+ Add Member</button>
+                        <button class="btn btn-secondary" onclick="exportData('team')">Export CSV</button>
+                    </div>
+                </div>
+                <div id="teamList" class="team-list"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Story Modal -->
+    <div id="storyModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="storyModalTitle">Add New Story</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="storyForm" class="modal-form">
+                <input type="hidden" id="storyId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="studyName">Study Name (Story Title) *</label>
+                        <input type="text" id="studyName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="brand">Brand *</label>
+                        <select id="brand" required>
+                            <option value="">Select Brand</option>
+                            <option value="LawnStarter">LawnStarter</option>
+                            <option value="Lawn Love">Lawn Love</option>
+                            <option value="Home Gnome">Home Gnome</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="pitchDate">Pitch Date</label>
+                        <input type="date" id="pitchDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="newsPeg">News Peg / Holiday Tie-in</label>
+                        <input type="text" id="newsPeg">
+                    </div>
+                    <div class="form-group">
+                        <label for="analysisDueBy">Analysis Due By</label>
+                        <input type="date" id="analysisDueBy">
+                    </div>
+                    <div class="form-group">
+                        <label for="draftDueBy">Draft Due By</label>
+                        <input type="date" id="draftDueBy">
+                    </div>
+                    <div class="form-group">
+                        <label for="editsDueBy">Edits Due By</label>
+                        <input type="date" id="editsDueBy">
+                    </div>
+                    <div class="form-group">
+                        <label for="qaDueBy">QA Due By</label>
+                        <input type="date" id="qaDueBy">
+                    </div>
+                    <div class="form-group">
+                        <label for="productionDate">Production Date</label>
+                        <input type="date" id="productionDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="expertsContacted">Number of Experts Contacted</label>
+                        <input type="number" id="expertsContacted" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="status">Status</label>
+                        <select id="status">
+                            <option value="planning">Planning</option>
+                            <option value="research">Research</option>
+                            <option value="analysis">Analysis</option>
+                            <option value="drafting">Drafting</option>
+                            <option value="editing">Editing</option>
+                            <option value="qa">QA</option>
+                            <option value="published">Published</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="notesBlockers">Notes / Blockers</label>
+                    <textarea id="notesBlockers" rows="3"></textarea>
+                </div>
+                <fieldset class="url-fieldset">
+                    <legend>URLs</legend>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="urlResearch">Research</label>
+                            <input type="url" id="urlResearch" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label for="urlMethodology">Methodology</label>
+                            <input type="url" id="urlMethodology" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label for="urlAnalysis">Official Analysis</label>
+                            <input type="url" id="urlAnalysis" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label for="urlPublished">Published Story</label>
+                            <input type="url" id="urlPublished" placeholder="https://...">
+                        </div>
+                    </div>
+                </fieldset>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Story</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- OOO Modal -->
+    <div id="oooModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Out of Office</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="oooForm" class="modal-form">
+                <div class="form-group">
+                    <label for="oooName">Name *</label>
+                    <input type="text" id="oooName" required placeholder="Enter your name">
+                </div>
+                <div class="form-group">
+                    <label for="oooStartDate">Start Date *</label>
+                    <input type="date" id="oooStartDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="oooEndDate">End Date *</label>
+                    <input type="date" id="oooEndDate" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add OOO</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Blocked Date Modal -->
+    <div id="blockedModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Blocked Date</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="blockedForm" class="modal-form">
+                <div class="form-group">
+                    <label for="blockedDate">Date *</label>
+                    <input type="date" id="blockedDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="blockedReason">Reason *</label>
+                    <input type="text" id="blockedReason" required placeholder="e.g., Holiday, Election Day">
+                </div>
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="blockedRecurring">
+                        Recurring annually
+                    </label>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Blocked Date</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Archive Modal -->
+    <div id="archiveModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="archiveModalTitle">Add to Archive</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="archiveForm" class="modal-form">
+                <input type="hidden" id="archiveId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="archiveTitle">Story Title *</label>
+                        <input type="text" id="archiveTitle" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveBrand">Brand</label>
+                        <select id="archiveBrand">
+                            <option value="">Select Brand</option>
+                            <option value="LawnStarter">LawnStarter</option>
+                            <option value="Lawn Love">Lawn Love</option>
+                            <option value="Home Gnome">Home Gnome</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="archivePublishDate">Original Publish Date</label>
+                        <input type="date" id="archivePublishDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveRefreshDate">Last Refresh Date</label>
+                        <input type="date" id="archiveRefreshDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveLinkCount">Link Count</label>
+                        <input type="number" id="archiveLinkCount" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="archivePageviews">Google Analytics Pageviews</label>
+                        <input type="number" id="archivePageviews" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveCtr">Click Through Rate (%)</label>
+                        <input type="number" id="archiveCtr" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveDomainAuthority">Domain Authority of Pickups</label>
+                        <input type="number" id="archiveDomainAuthority" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="archiveImpressions">Google Impressions</label>
+                        <input type="number" id="archiveImpressions" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="archivePosition">Google Position</label>
+                        <input type="number" id="archivePosition" min="0" step="0.1">
+                    </div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="archiveUrl">Published URL</label>
+                    <input type="url" id="archiveUrl" placeholder="https://...">
+                </div>
+                <div class="form-group full-width">
+                    <label for="archiveFeedback">Feedback Notes</label>
+                    <textarea id="archiveFeedback" rows="3" placeholder="Notes from previous runs..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Team Member Modal -->
+    <div id="teamModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Team Member</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="teamForm" class="modal-form">
+                <div class="form-group">
+                    <label for="memberName">Name *</label>
+                    <input type="text" id="memberName" required>
+                </div>
+                <div class="form-group">
+                    <label for="memberRole">Role *</label>
+                    <select id="memberRole" required>
+                        <option value="">Select Role</option>
+                        <option value="Writer">Writer</option>
+                        <option value="Editor">Editor</option>
+                        <option value="Analyst">Analyst</option>
+                        <option value="Manager">Manager</option>
+                        <option value="QA">QA</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="memberEmail">Email</label>
+                    <input type="email" id="memberEmail">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Member</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
