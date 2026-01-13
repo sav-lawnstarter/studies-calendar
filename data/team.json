@@ -1,0 +1,5 @@
+[
+  { "id": "1", "name": "Sarah Johnson", "role": "Writer", "email": "sarah@example.com" },
+  { "id": "2", "name": "Mike Chen", "role": "Editor", "email": "mike@example.com" },
+  { "id": "3", "name": "Lisa Park", "role": "Analyst", "email": "lisa@example.com" }
+]

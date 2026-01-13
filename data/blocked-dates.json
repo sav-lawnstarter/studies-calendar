@@ -1,0 +1,8 @@
+[
+  { "id": "1", "date": "2026-01-01", "reason": "New Year's Day", "recurring": true },
+  { "id": "2", "date": "2026-07-04", "reason": "Independence Day", "recurring": true },
+  { "id": "3", "date": "2026-12-25", "reason": "Christmas Day", "recurring": true },
+  { "id": "4", "date": "2026-11-26", "reason": "Thanksgiving", "recurring": true },
+  { "id": "5", "date": "2026-02-09", "reason": "Day After Super Bowl", "recurring": false },
+  { "id": "6", "date": "2026-11-03", "reason": "Election Day", "recurring": false }
+]
