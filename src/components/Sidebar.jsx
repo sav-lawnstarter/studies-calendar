@@ -1,10 +1,11 @@
 import React from 'react';
-import { Calendar, BarChart3, Archive, FileText, ChevronRight } from 'lucide-react';
+import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight } from 'lucide-react';
 
 const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
   { id: 'running-totals', label: 'Running Totals', icon: BarChart3 },
   { id: 'story-archive', label: 'Story Archive', icon: Archive },
+  { id: 'story-ideation', label: 'Story Ideation', icon: Lightbulb },
   { id: 'competitor-log', label: 'Competitor Log', icon: FileText },
 ];
 
@@ -15,7 +16,7 @@ export default function Sidebar({ activeView, setActiveView }) {
       <div className="p-6 border-b border-white/20">
         <div className="flex items-center gap-3">
           <img
-            src="/LawnStarter new logo.png"
+            src="/LawnStarter_new_logo.png"
             alt="LawnStarter"
             className="w-10 h-10 rounded-lg bg-white p-1"
           />

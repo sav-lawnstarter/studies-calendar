@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import ContentCalendar from './components/ContentCalendar';
 import RunningTotals from './components/RunningTotals';
 import StoryArchive from './components/StoryArchive';
+import StoryIdeation from './components/StoryIdeation';
 import CompetitorLog from './components/CompetitorLog';
 
 function App() {
@@ -16,6 +17,8 @@ function App() {
         return <RunningTotals />;
       case 'story-archive':
         return <StoryArchive />;
+      case 'story-ideation':
+        return <StoryIdeation />;
       case 'competitor-log':
         return <CompetitorLog />;
       default:
