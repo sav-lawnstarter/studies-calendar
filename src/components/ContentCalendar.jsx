@@ -20,8 +20,27 @@ import {
   subQuarters,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
-import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
+import { preloadedEvents, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
+
+// Empty form template for new stories
+const emptyStoryForm = {
+  title: '',
+  brand: 'LawnStarter',
+  pitchDate: '',
+  newsPeg: '',
+  analysisDueBy: '',
+  draftDueBy: '',
+  editsDueBy: '',
+  qaDueBy: '',
+  productionDate: '',
+  expertsContacted: '',
+  notes: '',
+  researchUrl: '',
+  methodologyUrl: '',
+  analysisUrl: '',
+  publishedUrl: '',
+};
 
 const viewModes = ['Week', 'Month', 'Quarter'];
 
@@ -30,6 +49,7 @@ const STORAGE_KEYS = {
   blockedDates: 'editorial-blocked-dates',
   hiddenEvents: 'editorial-hidden-events',
   eventOverrides: 'editorial-event-overrides',
+  stories: 'editorial-stories',
 };
 
 // Load data from localStorage
@@ -57,6 +77,14 @@ export default function ContentCalendar() {
   const [selectedStory, setSelectedStory] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [showAddStoryModal, setShowAddStoryModal] = useState(false);
+  const [storyForm, setStoryForm] = useState({ ...emptyStoryForm });
+  const [editingStoryId, setEditingStoryId] = useState(null);
+
+  // Persistent state for stories
+  const [stories, setStories] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.stories, [])
+  );
 
   // Persistent state for custom blocked dates
   const [customBlockedDates, setCustomBlockedDates] = useState(() =>
@@ -75,6 +103,10 @@ export default function ContentCalendar() {
 
   // Save to localStorage whenever state changes
   useEffect(() => {
+    saveToStorage(STORAGE_KEYS.stories, stories);
+  }, [stories]);
+
+  useEffect(() => {
     saveToStorage(STORAGE_KEYS.blockedDates, customBlockedDates);
   }, [customBlockedDates]);
 
@@ -90,11 +122,11 @@ export default function ContentCalendar() {
   const allEvents = useMemo(() => {
     const events = [];
 
-    // Add stories (shown on publish date)
-    sampleStories.forEach((story) => {
+    // Add stories (shown on pitch date)
+    stories.forEach((story) => {
       events.push({
         ...story,
-        date: story.publishDate,
+        date: story.pitchDate,
         displayType: 'story',
       });
     });
@@ -143,7 +175,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [stories, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -259,12 +291,78 @@ export default function ContentCalendar() {
     e.stopPropagation();
     if (event.displayType === 'story') {
       // Find the full story data
-      const fullStory = sampleStories.find((s) => s.id === event.id);
+      const fullStory = stories.find((s) => s.id === event.id);
       setSelectedStory(fullStory);
     } else if (['blocked', 'highTraffic', 'holiday'].includes(event.displayType)) {
       // Open edit modal for blocked dates and high traffic events
       setSelectedEvent(event);
       setShowEventModal(true);
+    }
+  };
+
+  // Story form handlers
+  const handleStoryFormChange = (field, value) => {
+    setStoryForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddStory = () => {
+    setStoryForm({ ...emptyStoryForm });
+    setEditingStoryId(null);
+    setShowAddStoryModal(true);
+  };
+
+  const handleEditStory = (story) => {
+    setStoryForm({
+      title: story.title || '',
+      brand: story.brand || 'LawnStarter',
+      pitchDate: story.pitchDate || '',
+      newsPeg: story.newsPeg || '',
+      analysisDueBy: story.analysisDueBy || '',
+      draftDueBy: story.draftDueBy || '',
+      editsDueBy: story.editsDueBy || '',
+      qaDueBy: story.qaDueBy || '',
+      productionDate: story.productionDate || '',
+      expertsContacted: story.expertsContacted || '',
+      notes: story.notes || '',
+      researchUrl: story.researchUrl || '',
+      methodologyUrl: story.methodologyUrl || '',
+      analysisUrl: story.analysisUrl || '',
+      publishedUrl: story.publishedUrl || '',
+    });
+    setEditingStoryId(story.id);
+    setSelectedStory(null);
+    setShowAddStoryModal(true);
+  };
+
+  const handleSaveStory = () => {
+    if (!storyForm.title.trim() || !storyForm.pitchDate) {
+      alert('Please enter a story title and pitch date.');
+      return;
+    }
+
+    if (editingStoryId) {
+      // Update existing story
+      setStories(prev => prev.map(s =>
+        s.id === editingStoryId ? { ...s, ...storyForm } : s
+      ));
+    } else {
+      // Add new story
+      const newStory = {
+        id: `story-${Date.now()}`,
+        ...storyForm,
+      };
+      setStories(prev => [...prev, newStory]);
+    }
+
+    setShowAddStoryModal(false);
+    setStoryForm({ ...emptyStoryForm });
+    setEditingStoryId(null);
+  };
+
+  const handleDeleteStory = (storyId) => {
+    if (window.confirm('Are you sure you want to delete this story?')) {
+      setStories(prev => prev.filter(s => s.id !== storyId));
+      setSelectedStory(null);
     }
   };
 
@@ -485,7 +583,10 @@ export default function ContentCalendar() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
+            <button
+              onClick={handleAddStory}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+            >
               <Plus size={18} />
               Add Story
             </button>
@@ -606,11 +707,265 @@ export default function ContentCalendar() {
         <StoryDetailModal
           story={selectedStory}
           onClose={() => setSelectedStory(null)}
+          onEdit={() => handleEditStory(selectedStory)}
+          onDelete={() => handleDeleteStory(selectedStory.id)}
         />
       )}
 
       {/* Event Edit Modal */}
       <EventEditModal />
+
+      {/* Add/Edit Story Modal */}
+      {showAddStoryModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowAddStoryModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-ls-green p-4 text-white flex items-center justify-between">
+              <h2 className="text-xl font-bold">
+                {editingStoryId ? 'Edit Story' : 'Add New Story'}
+              </h2>
+              <button
+                onClick={() => setShowAddStoryModal(false)}
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              <div className="space-y-4">
+                {/* Story Title */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Story Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={storyForm.title}
+                    onChange={(e) => handleStoryFormChange('title', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                    placeholder="Enter story title"
+                  />
+                </div>
+
+                {/* Brand */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Brand
+                  </label>
+                  <select
+                    value={storyForm.brand}
+                    onChange={(e) => handleStoryFormChange('brand', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                  >
+                    <option value="LawnStarter">LawnStarter</option>
+                    <option value="Lawn Love">Lawn Love</option>
+                    <option value="Home Gnome">Home Gnome</option>
+                  </select>
+                </div>
+
+                {/* Pitch Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Pitch Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={storyForm.pitchDate}
+                    onChange={(e) => handleStoryFormChange('pitchDate', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                  />
+                </div>
+
+                {/* News Peg/Holiday tie-in */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    News Peg/Holiday Tie-in
+                  </label>
+                  <input
+                    type="text"
+                    value={storyForm.newsPeg}
+                    onChange={(e) => handleStoryFormChange('newsPeg', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                    placeholder="e.g., Spring Lawn Care Season, Earth Day"
+                  />
+                </div>
+
+                {/* Due Dates Section */}
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Due Dates</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Analysis Due By
+                      </label>
+                      <input
+                        type="date"
+                        value={storyForm.analysisDueBy}
+                        onChange={(e) => handleStoryFormChange('analysisDueBy', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Draft Due By
+                      </label>
+                      <input
+                        type="date"
+                        value={storyForm.draftDueBy}
+                        onChange={(e) => handleStoryFormChange('draftDueBy', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Edits Due By
+                      </label>
+                      <input
+                        type="date"
+                        value={storyForm.editsDueBy}
+                        onChange={(e) => handleStoryFormChange('editsDueBy', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        QA Due By
+                      </label>
+                      <input
+                        type="date"
+                        value={storyForm.qaDueBy}
+                        onChange={(e) => handleStoryFormChange('qaDueBy', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Production Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Production Date
+                  </label>
+                  <input
+                    type="date"
+                    value={storyForm.productionDate}
+                    onChange={(e) => handleStoryFormChange('productionDate', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                  />
+                </div>
+
+                {/* Number of Experts Contacted */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Number of Experts Contacted
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={storyForm.expertsContacted}
+                    onChange={(e) => handleStoryFormChange('expertsContacted', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                    placeholder="0"
+                  />
+                </div>
+
+                {/* Notes/Blockers */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Notes/Blockers
+                  </label>
+                  <textarea
+                    value={storyForm.notes}
+                    onChange={(e) => handleStoryFormChange('notes', e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                    placeholder="Any notes or blockers for this story..."
+                  />
+                </div>
+
+                {/* URLs Section */}
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">URLs</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Research URL
+                      </label>
+                      <input
+                        type="url"
+                        value={storyForm.researchUrl}
+                        onChange={(e) => handleStoryFormChange('researchUrl', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Methodology URL
+                      </label>
+                      <input
+                        type="url"
+                        value={storyForm.methodologyUrl}
+                        onChange={(e) => handleStoryFormChange('methodologyUrl', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Official Analysis URL
+                      </label>
+                      <input
+                        type="url"
+                        value={storyForm.analysisUrl}
+                        onChange={(e) => handleStoryFormChange('analysisUrl', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Published Story URL
+                      </label>
+                      <input
+                        type="url"
+                        value={storyForm.publishedUrl}
+                        onChange={(e) => handleStoryFormChange('publishedUrl', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                        placeholder="https://..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t bg-gray-50 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowAddStoryModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveStory}
+                className="px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+              >
+                {editingStoryId ? 'Save Changes' : 'Add Story'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

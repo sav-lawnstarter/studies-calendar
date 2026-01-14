@@ -12,42 +12,24 @@ import {
   Clock,
   Link2,
   StickyNote,
+  Building2,
+  Users,
+  Trash2,
+  Edit,
 } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 
-export default function StoryDetailModal({ story, onClose }) {
+export default function StoryDetailModal({ story, onClose, onEdit, onDelete }) {
   if (!story) return null;
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Published':
-        return 'bg-ls-green text-white';
-      case 'In Progress':
-        return 'bg-ls-orange text-white';
-      case 'Draft':
-        return 'bg-yellow-500 text-white';
-      case 'Planned':
-        return 'bg-gray-400 text-white';
-      default:
-        return 'bg-gray-300 text-gray-700';
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'Not set';
+    try {
+      return format(parseISO(dateStr), 'MMM d, yyyy');
+    } catch {
+      return dateStr;
     }
   };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'High':
-        return 'text-red-600 bg-red-50';
-      case 'Medium':
-        return 'text-ls-orange bg-orange-50';
-      case 'Low':
-        return 'text-gray-600 bg-gray-100';
-      default:
-        return 'text-gray-500 bg-gray-50';
-    }
-  };
-
-  const progressPercentage = story.metrics?.currentWords && story.metrics?.targetWords
-    ? Math.min(100, Math.round((story.metrics.currentWords / story.metrics.targetWords) * 100))
-    : 0;
 
   return (
     <div
@@ -63,12 +45,8 @@ export default function StoryDetailModal({ story, onClose }) {
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(story.status)}`}>
-                  {story.status}
-                </span>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(story.priority)}`}>
-                  <Flag size={12} className="inline mr-1" />
-                  {story.priority} Priority
+                <span className="px-3 py-1 rounded-full text-sm font-medium bg-white/20">
+                  {story.brand || 'LawnStarter'}
                 </span>
               </div>
               <h2 className="text-2xl font-bold">{story.title}</h2>
@@ -85,50 +63,64 @@ export default function StoryDetailModal({ story, onClose }) {
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
           {/* Key Info Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
-                <User size={14} />
-                Assignee
-              </div>
-              <p className="font-semibold text-gray-900">{story.assignee}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
-                <Clock size={14} />
-                Due Date
-              </div>
-              <p className="font-semibold text-gray-900">{story.dueDate}</p>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
                 <Calendar size={14} />
-                Publish Date
+                Pitch Date
               </div>
-              <p className="font-semibold text-gray-900">{story.publishDate}</p>
+              <p className="font-semibold text-gray-900">{formatDate(story.pitchDate)}</p>
             </div>
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
-                <FileText size={14} />
-                Word Count
+                <Flag size={14} />
+                News Peg
               </div>
-              <p className="font-semibold text-gray-900">
-                {story.metrics?.currentWords || 0} / {story.metrics?.targetWords || 0}
-              </p>
+              <p className="font-semibold text-gray-900">{story.newsPeg || 'None'}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
+                <Users size={14} />
+                Experts Contacted
+              </div>
+              <p className="font-semibold text-gray-900">{story.expertsContacted || '0'}</p>
             </div>
           </div>
 
-          {/* Progress Bar */}
+          {/* Due Dates Section */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">Writing Progress</span>
-              <span className="text-sm text-gray-500">{progressPercentage}%</span>
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-3">
+              <Clock size={18} className="text-ls-green" />
+              Due Dates
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1">Analysis Due</p>
+                <p className="font-medium text-gray-900 text-sm">{formatDate(story.analysisDueBy)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1">Draft Due</p>
+                <p className="font-medium text-gray-900 text-sm">{formatDate(story.draftDueBy)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1">Edits Due</p>
+                <p className="font-medium text-gray-900 text-sm">{formatDate(story.editsDueBy)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1">QA Due</p>
+                <p className="font-medium text-gray-900 text-sm">{formatDate(story.qaDueBy)}</p>
+              </div>
             </div>
-            <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-ls-green rounded-full transition-all duration-500"
-                style={{ width: `${progressPercentage}%` }}
-              />
+          </div>
+
+          {/* Production Date */}
+          <div className="mb-6">
+            <div className="bg-ls-green-lighter rounded-lg p-4">
+              <div className="flex items-center gap-2 text-ls-green text-sm mb-1">
+                <Calendar size={14} />
+                Production Date
+              </div>
+              <p className="font-bold text-ls-green-dark text-lg">{formatDate(story.productionDate)}</p>
             </div>
           </div>
 
@@ -139,29 +131,51 @@ export default function StoryDetailModal({ story, onClose }) {
               Links
             </h3>
             <div className="space-y-2">
-              {story.urls?.draft && (
+              {story.researchUrl && (
                 <a
-                  href={story.urls.draft}
+                  href={story.researchUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 text-ls-green hover:text-ls-green-light transition-colors"
                 >
                   <ExternalLink size={14} />
-                  Draft Document
+                  Research Document
                 </a>
               )}
-              {story.urls?.published && (
+              {story.methodologyUrl && (
                 <a
-                  href={story.urls.published}
+                  href={story.methodologyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 text-ls-green hover:text-ls-green-light transition-colors"
                 >
                   <ExternalLink size={14} />
-                  Published Article
+                  Methodology
                 </a>
               )}
-              {!story.urls?.draft && !story.urls?.published && (
+              {story.analysisUrl && (
+                <a
+                  href={story.analysisUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-ls-green hover:text-ls-green-light transition-colors"
+                >
+                  <ExternalLink size={14} />
+                  Official Analysis
+                </a>
+              )}
+              {story.publishedUrl && (
+                <a
+                  href={story.publishedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-ls-green hover:text-ls-green-light transition-colors"
+                >
+                  <ExternalLink size={14} />
+                  Published Story
+                </a>
+              )}
+              {!story.researchUrl && !story.methodologyUrl && !story.analysisUrl && !story.publishedUrl && (
                 <p className="text-gray-400 italic">No links added yet</p>
               )}
             </div>
@@ -171,77 +185,38 @@ export default function StoryDetailModal({ story, onClose }) {
           <div className="mb-6">
             <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-3">
               <StickyNote size={18} className="text-ls-green" />
-              Notes
+              Notes/Blockers
             </h3>
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <p className="text-gray-700">{story.notes || 'No notes added yet.'}</p>
+              <p className="text-gray-700 whitespace-pre-wrap">{story.notes || 'No notes added yet.'}</p>
             </div>
           </div>
-
-          {/* Milestones */}
-          <div className="mb-6">
-            <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-3">
-              <CheckCircle2 size={18} className="text-ls-green" />
-              Milestones
-            </h3>
-            <div className="space-y-3">
-              {story.milestones?.map((milestone, index) => (
-                <div
-                  key={index}
-                  className={`flex items-center gap-3 p-3 rounded-lg ${
-                    milestone.completed ? 'bg-ls-green-lighter' : 'bg-gray-50'
-                  }`}
-                >
-                  {milestone.completed ? (
-                    <CheckCircle2 size={20} className="text-ls-green" />
-                  ) : (
-                    <Circle size={20} className="text-gray-400" />
-                  )}
-                  <div className="flex-1">
-                    <p className={`font-medium ${milestone.completed ? 'text-ls-green' : 'text-gray-700'}`}>
-                      {milestone.name}
-                    </p>
-                    <p className="text-sm text-gray-500">{milestone.date}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Metrics (for published stories) */}
-          {story.status === 'Published' && story.metrics?.pageViews && (
-            <div>
-              <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-3">
-                <BarChart2 size={18} className="text-ls-green" />
-                Performance Metrics
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-ls-green-lighter rounded-lg p-4 text-center">
-                  <p className="text-3xl font-bold text-ls-green">
-                    {story.metrics.pageViews.toLocaleString()}
-                  </p>
-                  <p className="text-sm text-gray-600">Page Views</p>
-                </div>
-                <div className="bg-ls-green-lighter rounded-lg p-4 text-center">
-                  <p className="text-3xl font-bold text-ls-green">{story.metrics.avgTimeOnPage}</p>
-                  <p className="text-sm text-gray-600">Avg. Time on Page</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
-        <div className="border-t bg-gray-50 px-6 py-4 flex justify-end gap-3">
+        <div className="border-t bg-gray-50 px-6 py-4 flex justify-between">
           <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            onClick={onDelete}
+            className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
           >
-            Close
+            <Trash2 size={18} />
+            Delete
           </button>
-          <button className="px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
-            Edit Story
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              Close
+            </button>
+            <button
+              onClick={onEdit}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+            >
+              <Edit size={18} />
+              Edit Story
+            </button>
+          </div>
         </div>
       </div>
     </div>

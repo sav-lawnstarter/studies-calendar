@@ -78,55 +78,6 @@ export default function CompetitorLog() {
           </div>
         )}
       </div>
-
-      {/* Competitor Summary */}
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Competitors</h3>
-          <div className="space-y-3">
-            {['TruGreen', 'Scotts', 'Sunday Lawn Care'].map((competitor, index) => {
-              const count = competitorLog.filter((l) => l.competitor === competitor).length;
-              return (
-                <div key={competitor} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 bg-ls-green-lighter rounded-full flex items-center justify-center text-xs font-medium text-ls-green">
-                      {index + 1}
-                    </span>
-                    <span className="text-gray-700">{competitor}</span>
-                  </div>
-                  <span className="text-sm text-gray-500">{count} activities</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Types</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">Content Published</span>
-              <span className="font-medium text-gray-900">2</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">Video/Media</span>
-              <span className="font-medium text-gray-900">1</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">Campaigns</span>
-              <span className="font-medium text-gray-900">1</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Trends</h3>
-          <p className="text-gray-600 text-sm">
-            Competitors are focusing on video content and user-generated campaigns. Consider
-            increasing multimedia content production.
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
