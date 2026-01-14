@@ -1,54 +1,72 @@
 import React from 'react';
-import { BarChart2, TrendingUp, FileText, Users, Calendar } from 'lucide-react';
-import { sampleStories } from '../data/events';
+import { BarChart2, TrendingUp, FileText, Building2, Calendar, Clock } from 'lucide-react';
 
-export default function RunningTotals() {
+export default function RunningTotals({ stories = [] }) {
   // Calculate statistics
   const stats = {
-    total: sampleStories.length,
-    published: sampleStories.filter((s) => s.status === 'Published').length,
-    inProgress: sampleStories.filter((s) => s.status === 'In Progress').length,
-    draft: sampleStories.filter((s) => s.status === 'Draft').length,
-    planned: sampleStories.filter((s) => s.status === 'Planned').length,
+    total: stories.length,
+    pitched: stories.filter((s) => s.status === 'Pitched').length,
+    inProgress: stories.filter((s) => s.status === 'In Progress').length,
+    published: stories.filter((s) => s.status === 'Published').length,
   };
 
-  const totalWords = sampleStories.reduce((acc, s) => acc + (s.metrics?.currentWords || 0), 0);
-  const targetWords = sampleStories.reduce((acc, s) => acc + (s.metrics?.targetWords || 0), 0);
-
-  const byAssignee = sampleStories.reduce((acc, story) => {
-    acc[story.assignee] = (acc[story.assignee] || 0) + 1;
+  // Stories by brand
+  const byBrand = stories.reduce((acc, story) => {
+    const brand = story.brand || 'Unassigned';
+    acc[brand] = (acc[brand] || 0) + 1;
     return acc;
   }, {});
 
-  const byPriority = sampleStories.reduce((acc, story) => {
-    acc[story.priority] = (acc[story.priority] || 0) + 1;
+  // Stories by status
+  const byStatus = stories.reduce((acc, story) => {
+    acc[story.status] = (acc[story.status] || 0) + 1;
     return acc;
   }, {});
+
+  // Sort stories by pitch date (most recent first)
+  const storiesByPitchDate = [...stories].sort((a, b) => {
+    if (!a.pitchDate) return 1;
+    if (!b.pitchDate) return -1;
+    return new Date(b.pitchDate) - new Date(a.pitchDate);
+  });
+
+  const brandColors = {
+    'LawnStarter': 'bg-ls-green text-white',
+    'Lawn Love': 'bg-pink-500 text-white',
+    'Home Gnome': 'bg-purple-500 text-white',
+    'Unassigned': 'bg-gray-400 text-white',
+  };
+
+  const statusColors = {
+    'Pitched': 'bg-ls-blue text-white',
+    'In Progress': 'bg-ls-orange text-white',
+    'Published': 'bg-ls-green text-white',
+  };
 
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Running Totals</h1>
 
       {/* Overview Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 bg-ls-green-lighter rounded-lg">
               <FileText size={20} className="text-ls-green" />
             </div>
-            <span className="text-sm text-gray-500">Total Stories</span>
+            <span className="text-sm text-gray-500">Total Stories Pitched</span>
           </div>
           <p className="text-3xl font-bold text-gray-900">{stats.total}</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <TrendingUp size={20} className="text-green-600" />
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Clock size={20} className="text-ls-blue" />
             </div>
-            <span className="text-sm text-gray-500">Published</span>
+            <span className="text-sm text-gray-500">Pitched</span>
           </div>
-          <p className="text-3xl font-bold text-green-600">{stats.published}</p>
+          <p className="text-3xl font-bold text-ls-blue">{stats.pitched}</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -63,87 +81,112 @@ export default function RunningTotals() {
 
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <FileText size={20} className="text-yellow-600" />
+            <div className="p-2 bg-green-100 rounded-lg">
+              <TrendingUp size={20} className="text-green-600" />
             </div>
-            <span className="text-sm text-gray-500">Draft</span>
+            <span className="text-sm text-gray-500">Published</span>
           </div>
-          <p className="text-3xl font-bold text-yellow-600">{stats.draft}</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Calendar size={20} className="text-gray-600" />
-            </div>
-            <span className="text-sm text-gray-500">Planned</span>
-          </div>
-          <p className="text-3xl font-bold text-gray-600">{stats.planned}</p>
+          <p className="text-3xl font-bold text-green-600">{stats.published}</p>
         </div>
       </div>
 
-      {/* Detailed Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Word Count Progress */}
+      {/* Brand and Status Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* By Brand */}
         <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Word Count Progress</h3>
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-gray-500">Total Progress</span>
-              <span className="font-medium">{Math.round((totalWords / targetWords) * 100)}%</span>
-            </div>
-            <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-ls-green rounded-full"
-                style={{ width: `${(totalWords / targetWords) * 100}%` }}
-              />
-            </div>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">{totalWords.toLocaleString()}</p>
-            <p className="text-sm text-gray-500">of {targetWords.toLocaleString()} words</p>
-          </div>
-        </div>
-
-        {/* By Assignee */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Stories by Assignee</h3>
-          <div className="space-y-3">
-            {Object.entries(byAssignee).map(([name, count]) => (
-              <div key={name} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-ls-green-lighter rounded-full flex items-center justify-center">
-                    <Users size={14} className="text-ls-green" />
-                  </div>
-                  <span className="text-gray-700">{name}</span>
-                </div>
-                <span className="font-semibold text-gray-900">{count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* By Priority */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Stories by Priority</h3>
-          <div className="space-y-3">
-            {Object.entries(byPriority).map(([priority, count]) => {
-              const colors = {
-                High: 'bg-red-100 text-red-600',
-                Medium: 'bg-orange-100 text-ls-orange',
-                Low: 'bg-gray-100 text-gray-600',
-              };
-              return (
-                <div key={priority} className="flex items-center justify-between">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${colors[priority]}`}>
-                    {priority}
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
+            <Building2 size={20} className="text-ls-green" />
+            Stories by Brand
+          </h3>
+          {Object.keys(byBrand).length > 0 ? (
+            <div className="space-y-3">
+              {Object.entries(byBrand).map(([brand, count]) => (
+                <div key={brand} className="flex items-center justify-between">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${brandColors[brand] || 'bg-gray-400 text-white'}`}>
+                    {brand}
                   </span>
                   <span className="font-semibold text-gray-900">{count}</span>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-4">No stories yet. Add stories from the Content Calendar.</p>
+          )}
         </div>
+
+        {/* By Status */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
+            <BarChart2 size={20} className="text-ls-green" />
+            Stories by Status
+          </h3>
+          {Object.keys(byStatus).length > 0 ? (
+            <div className="space-y-3">
+              {Object.entries(byStatus).map(([status, count]) => (
+                <div key={status} className="flex items-center justify-between">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[status] || 'bg-gray-400 text-white'}`}>
+                    {status}
+                  </span>
+                  <span className="font-semibold text-gray-900">{count}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-4">No stories yet. Add stories from the Content Calendar.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Stories Table */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="p-6 border-b">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <Calendar size={20} className="text-ls-green" />
+            Stories by Pitch Date
+          </h3>
+        </div>
+        {storiesByPitchDate.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Title</th>
+                  <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Brand</th>
+                  <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Pitch Date</th>
+                  <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {storiesByPitchDate.map((story) => (
+                  <tr key={story.id} className="border-b hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-gray-900">{story.title}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${brandColors[story.brand] || 'bg-gray-400 text-white'}`}>
+                        {story.brand || 'Unassigned'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-600">
+                      {story.pitchDate || 'Not set'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[story.status] || 'bg-gray-400 text-white'}`}>
+                        {story.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <FileText size={48} className="mx-auto text-gray-300 mb-4" />
+            <p className="text-gray-500">No stories yet.</p>
+            <p className="text-sm text-gray-400 mt-1">Add stories from the Content Calendar to see them here.</p>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -20,8 +20,11 @@ import {
   subQuarters,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
-import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
+import { preloadedEvents, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
+
+const BRANDS = ['LawnStarter', 'Lawn Love', 'Home Gnome'];
+const STATUSES = ['Pitched', 'In Progress', 'Published'];
 
 const viewModes = ['Week', 'Month', 'Quarter'];
 
@@ -51,12 +54,23 @@ const saveToStorage = (key, value) => {
   }
 };
 
-export default function ContentCalendar() {
+export default function ContentCalendar({ stories = [], addStory, updateStory, deleteStory }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('Month');
   const [selectedStory, setSelectedStory] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [showAddStoryModal, setShowAddStoryModal] = useState(false);
+  const [newStory, setNewStory] = useState({
+    title: '',
+    brand: 'LawnStarter',
+    status: 'Pitched',
+    pitchDate: format(new Date(), 'yyyy-MM-dd'),
+    publishDate: '',
+    assignee: '',
+    priority: 'Medium',
+    notes: '',
+  });
 
   // Persistent state for custom blocked dates
   const [customBlockedDates, setCustomBlockedDates] = useState(() =>
@@ -90,13 +104,16 @@ export default function ContentCalendar() {
   const allEvents = useMemo(() => {
     const events = [];
 
-    // Add stories (shown on publish date)
-    sampleStories.forEach((story) => {
-      events.push({
-        ...story,
-        date: story.publishDate,
-        displayType: 'story',
-      });
+    // Add stories (shown on publish date or pitch date if no publish date)
+    stories.forEach((story) => {
+      const displayDate = story.publishDate || story.pitchDate;
+      if (displayDate) {
+        events.push({
+          ...story,
+          date: displayDate,
+          displayType: 'story',
+        });
+      }
     });
 
     // Add OOO
@@ -143,7 +160,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [stories, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -259,13 +276,54 @@ export default function ContentCalendar() {
     e.stopPropagation();
     if (event.displayType === 'story') {
       // Find the full story data
-      const fullStory = sampleStories.find((s) => s.id === event.id);
+      const fullStory = stories.find((s) => s.id === event.id);
       setSelectedStory(fullStory);
     } else if (['blocked', 'highTraffic', 'holiday'].includes(event.displayType)) {
       // Open edit modal for blocked dates and high traffic events
       setSelectedEvent(event);
       setShowEventModal(true);
     }
+  };
+
+  // Handle adding a new story
+  const handleAddStory = () => {
+    if (!newStory.title.trim()) return;
+
+    addStory({
+      title: newStory.title,
+      brand: newStory.brand,
+      status: newStory.status,
+      pitchDate: newStory.pitchDate,
+      publishDate: newStory.publishDate || null,
+      assignee: newStory.assignee,
+      priority: newStory.priority,
+      notes: newStory.notes,
+      dueDate: newStory.publishDate || newStory.pitchDate,
+      metrics: {
+        linkCount: null,
+        ctr: null,
+        googleImpressions: null,
+        googlePosition: null,
+        domainAuthority: null,
+        pageviews: null,
+        currentWords: 0,
+        targetWords: 1500,
+      },
+      feedbackNotes: '',
+    });
+
+    // Reset form and close modal
+    setNewStory({
+      title: '',
+      brand: 'LawnStarter',
+      status: 'Pitched',
+      pitchDate: format(new Date(), 'yyyy-MM-dd'),
+      publishDate: '',
+      assignee: '',
+      priority: 'Medium',
+      notes: '',
+    });
+    setShowAddStoryModal(false);
   };
 
   // Delete/hide an event
@@ -485,7 +543,10 @@ export default function ContentCalendar() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
+            <button
+              onClick={() => setShowAddStoryModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+            >
               <Plus size={18} />
               Add Story
             </button>
@@ -611,6 +672,144 @@ export default function ContentCalendar() {
 
       {/* Event Edit Modal */}
       <EventEditModal />
+
+      {/* Add Story Modal */}
+      {showAddStoryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddStoryModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b bg-ls-green rounded-t-xl">
+              <h3 className="text-lg font-semibold text-white">Add New Story</h3>
+              <button
+                onClick={() => setShowAddStoryModal(false)}
+                className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-white" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Story Title *</label>
+                <input
+                  type="text"
+                  value={newStory.title}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                  placeholder="Enter story title"
+                />
+              </div>
+
+              {/* Brand */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
+                <select
+                  value={newStory.brand}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, brand: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                >
+                  {BRANDS.map(brand => (
+                    <option key={brand} value={brand}>{brand}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
+                <select
+                  value={newStory.status}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, status: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                >
+                  {STATUSES.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pitch Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pitch Date *</label>
+                <input
+                  type="date"
+                  value={newStory.pitchDate}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, pitchDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                />
+              </div>
+
+              {/* Publish Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Publish Date (optional)</label>
+                <input
+                  type="date"
+                  value={newStory.publishDate}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, publishDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                />
+              </div>
+
+              {/* Assignee */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assignee</label>
+                <input
+                  type="text"
+                  value={newStory.assignee}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, assignee: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                  placeholder="Enter assignee name"
+                />
+              </div>
+
+              {/* Priority */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                <select
+                  value={newStory.priority}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, priority: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                >
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={newStory.notes}
+                  onChange={(e) => setNewStory(prev => ({ ...prev, notes: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                  rows={3}
+                  placeholder="Add any notes..."
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t bg-gray-50 rounded-b-xl flex justify-end gap-3">
+              <button
+                onClick={() => setShowAddStoryModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddStory}
+                disabled={!newStory.title.trim()}
+                className="px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Story
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
