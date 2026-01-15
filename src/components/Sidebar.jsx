@@ -14,16 +14,13 @@ export default function Sidebar({ activeView, setActiveView }) {
     <aside className="w-64 bg-ls-green h-screen flex flex-col fixed left-0 top-0">
       {/* Logo and Branding */}
       <div className="p-6 border-b border-white/20">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-center">
           <img
             src="/LawnStarter_new_logo.png"
             alt="LawnStarter"
-            className="w-10 h-10 rounded-lg bg-white p-1"
+            className="h-12 w-auto"
           />
-          <div>
-            <h1 className="text-white font-bold text-lg leading-tight">LawnStarter</h1>
-            <p className="text-white/70 text-xs">Editorial Dashboard</p>
-          </div>
+          <p className="text-white/80 text-sm mt-2">Editorial Dashboard</p>
         </div>
       </div>
 
