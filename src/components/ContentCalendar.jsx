@@ -32,6 +32,75 @@ const STORAGE_KEYS = {
   eventOverrides: 'editorial-event-overrides',
 };
 
+// Custom fiscal quarter definitions
+// Q4: December 1 - February 28/29
+// Q1: March 1 - May 31
+// Q2: June 1 - August 31
+// Q3: September 1 - November 30
+const getFiscalQuarter = (date) => {
+  const month = date.getMonth(); // 0-11
+  const year = date.getFullYear();
+
+  // December (11) = Q4 of next fiscal year
+  // January-February (0-1) = Q4 of current fiscal year
+  // March-May (2-4) = Q1
+  // June-August (5-7) = Q2
+  // September-November (8-10) = Q3
+
+  if (month === 11) {
+    // December - Q4 of the fiscal year that starts next March
+    return { quarter: 4, fiscalYear: year + 1 };
+  } else if (month <= 1) {
+    // January-February - Q4 of the current fiscal year
+    return { quarter: 4, fiscalYear: year };
+  } else if (month <= 4) {
+    // March-May - Q1
+    return { quarter: 1, fiscalYear: year };
+  } else if (month <= 7) {
+    // June-August - Q2
+    return { quarter: 2, fiscalYear: year };
+  } else {
+    // September-November - Q3
+    return { quarter: 3, fiscalYear: year };
+  }
+};
+
+const getFiscalQuarterDates = (quarter, fiscalYear) => {
+  // Returns { start, end } for a given fiscal quarter
+  switch (quarter) {
+    case 4:
+      // Q4: December 1 of previous year - February 28/29 of fiscal year
+      const q4Start = new Date(fiscalYear - 1, 11, 1); // December 1
+      // Check for leap year
+      const isLeapYear = (fiscalYear % 4 === 0 && fiscalYear % 100 !== 0) || (fiscalYear % 400 === 0);
+      const q4End = new Date(fiscalYear, 1, isLeapYear ? 29 : 28); // February 28 or 29
+      return { start: q4Start, end: q4End };
+    case 1:
+      // Q1: March 1 - May 31
+      return { start: new Date(fiscalYear, 2, 1), end: new Date(fiscalYear, 4, 31) };
+    case 2:
+      // Q2: June 1 - August 31
+      return { start: new Date(fiscalYear, 5, 1), end: new Date(fiscalYear, 7, 31) };
+    case 3:
+      // Q3: September 1 - November 30
+      return { start: new Date(fiscalYear, 8, 1), end: new Date(fiscalYear, 10, 30) };
+    default:
+      return { start: new Date(), end: new Date() };
+  }
+};
+
+const getNextFiscalQuarter = (quarter, fiscalYear) => {
+  if (quarter === 4) return { quarter: 1, fiscalYear: fiscalYear };
+  if (quarter === 3) return { quarter: 4, fiscalYear: fiscalYear + 1 };
+  return { quarter: quarter + 1, fiscalYear: fiscalYear };
+};
+
+const getPrevFiscalQuarter = (quarter, fiscalYear) => {
+  if (quarter === 1) return { quarter: 4, fiscalYear: fiscalYear };
+  if (quarter === 4) return { quarter: 3, fiscalYear: fiscalYear - 1 };
+  return { quarter: quarter - 1, fiscalYear: fiscalYear };
+};
+
 // Load data from localStorage
 const loadFromStorage = (key, defaultValue) => {
   try {
@@ -164,7 +233,11 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       setCurrentDate(subMonths(currentDate, 1));
     } else {
-      setCurrentDate(subQuarters(currentDate, 1));
+      // Navigate to previous fiscal quarter
+      const { quarter, fiscalYear } = getFiscalQuarter(currentDate);
+      const prev = getPrevFiscalQuarter(quarter, fiscalYear);
+      const { start } = getFiscalQuarterDates(prev.quarter, prev.fiscalYear);
+      setCurrentDate(start);
     }
   };
 
@@ -174,7 +247,11 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       setCurrentDate(addMonths(currentDate, 1));
     } else {
-      setCurrentDate(addQuarters(currentDate, 1));
+      // Navigate to next fiscal quarter
+      const { quarter, fiscalYear } = getFiscalQuarter(currentDate);
+      const next = getNextFiscalQuarter(quarter, fiscalYear);
+      const { start } = getFiscalQuarterDates(next.quarter, next.fiscalYear);
+      setCurrentDate(start);
     }
   };
 
@@ -195,8 +272,9 @@ export default function ContentCalendar() {
       const end = endOfWeek(monthEnd, { weekStartsOn: 0 });
       return { start, end };
     } else {
-      const quarterStart = startOfQuarter(currentDate);
-      const quarterEnd = endOfQuarter(currentDate);
+      // Use custom fiscal quarters
+      const { quarter, fiscalYear } = getFiscalQuarter(currentDate);
+      const { start: quarterStart, end: quarterEnd } = getFiscalQuarterDates(quarter, fiscalYear);
       const start = startOfWeek(quarterStart, { weekStartsOn: 0 });
       const end = endOfWeek(quarterEnd, { weekStartsOn: 0 });
       return { start, end };
@@ -231,9 +309,11 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       return format(currentDate, 'MMMM yyyy');
     } else {
-      const quarterStart = startOfQuarter(currentDate);
-      const quarter = Math.floor(quarterStart.getMonth() / 3) + 1;
-      return `Q${quarter} ${format(currentDate, 'yyyy')}`;
+      // Use custom fiscal quarters
+      const { quarter, fiscalYear } = getFiscalQuarter(currentDate);
+      // Display as Q# YY (e.g., "Q4 25" for fiscal year 2025)
+      const yearShort = String(fiscalYear).slice(-2);
+      return `Q${quarter} ${yearShort}`;
     }
   };
 
@@ -555,49 +635,70 @@ export default function ContentCalendar() {
 
         {/* Calendar Body */}
         <div className="flex-1">
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="grid grid-cols-7 border-b">
-              {week.map((day) => {
-                const dayEvents = getEventsForDay(day);
-                const isToday = isSameDay(day, new Date());
-                const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+          {weeks.map((week, weekIndex) => {
+            // Check if this week contains the 1st of a new month (for Quarter view month indicators)
+            const firstOfMonthInWeek = viewMode === 'Quarter'
+              ? week.find(day => day.getDate() === 1)
+              : null;
 
-                return (
-                  <div
-                    key={day.toISOString()}
-                    className={`
-                      min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
-                      ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
-                    `}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
+            // For the first week in Quarter view, show the month of the first day if it's not the 1st
+            const showFirstWeekMonth = viewMode === 'Quarter' && weekIndex === 0 && !firstOfMonthInWeek;
+            const firstWeekMonth = showFirstWeekMonth ? week[0] : null;
+
+            return (
+              <React.Fragment key={weekIndex}>
+                {/* Month indicator for Quarter view */}
+                {(firstOfMonthInWeek || firstWeekMonth) && (
+                  <div className="bg-ls-green/10 border-b border-ls-green/30 px-4 py-2">
+                    <span className="text-sm font-semibold text-ls-green">
+                      {format(firstOfMonthInWeek || firstWeekMonth, 'MMMM yyyy')}
+                    </span>
+                  </div>
+                )}
+                <div className="grid grid-cols-7 border-b">
+                  {week.map((day) => {
+                    const dayEvents = getEventsForDay(day);
+                    const isToday = isSameDay(day, new Date());
+                    const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+
+                    return (
+                      <div
+                        key={day.toISOString()}
                         className={`
-                          text-sm font-medium
-                          ${isToday
-                            ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
-                            : isCurrentMonth
-                              ? 'text-gray-900'
-                              : 'text-gray-400'
-                          }
+                          min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
+                          ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
                         `}
                       >
-                        {format(day, 'd')}
-                      </span>
-                    </div>
-                    <div className="space-y-1 overflow-y-auto max-h-[90px]">
-                      {dayEvents.slice(0, 4).map(renderEvent)}
-                      {dayEvents.length > 4 && (
-                        <div className="text-xs text-gray-500 px-2">
-                          +{dayEvents.length - 4} more
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={`
+                              text-sm font-medium
+                              ${isToday
+                                ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
+                                : isCurrentMonth
+                                  ? 'text-gray-900'
+                                  : 'text-gray-400'
+                              }
+                            `}
+                          >
+                            {format(day, 'd')}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                        <div className="space-y-1 overflow-y-auto max-h-[90px]">
+                          {dayEvents.slice(0, 4).map(renderEvent)}
+                          {dayEvents.length > 4 && (
+                            <div className="text-xs text-gray-500 px-2">
+                              +{dayEvents.length - 4} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
