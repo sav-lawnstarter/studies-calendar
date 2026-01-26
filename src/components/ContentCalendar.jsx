@@ -14,10 +14,6 @@ import {
   isSameDay,
   isWithinInterval,
   parseISO,
-  startOfQuarter,
-  endOfQuarter,
-  addQuarters,
-  subQuarters,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
@@ -30,6 +26,53 @@ const STORAGE_KEYS = {
   blockedDates: 'editorial-blocked-dates',
   hiddenEvents: 'editorial-hidden-events',
   eventOverrides: 'editorial-event-overrides',
+};
+
+// Custom quarter definitions
+// Q4: Dec 1 - Feb 28/29, Q1: Mar 1 - May 31, Q2: Jun 1 - Aug 31, Q3: Sep 1 - Nov 30
+const getCustomQuarter = (date) => {
+  const month = date.getMonth(); // 0-11
+  const year = date.getFullYear();
+
+  if (month >= 2 && month <= 4) { // Mar-May
+    return { quarter: 1, fiscalYear: year % 100 };
+  }
+  if (month >= 5 && month <= 7) { // Jun-Aug
+    return { quarter: 2, fiscalYear: year % 100 };
+  }
+  if (month >= 8 && month <= 10) { // Sep-Nov
+    return { quarter: 3, fiscalYear: year % 100 };
+  }
+  // Q4: Dec or Jan-Feb
+  if (month === 11) { // December
+    return { quarter: 4, fiscalYear: year % 100 };
+  }
+  // Jan-Feb: Q4 of previous fiscal year
+  return { quarter: 4, fiscalYear: (year - 1) % 100 };
+};
+
+const getCustomQuarterStart = (date) => {
+  const month = date.getMonth();
+  const year = date.getFullYear();
+
+  if (month >= 2 && month <= 4) return new Date(year, 2, 1); // Mar 1
+  if (month >= 5 && month <= 7) return new Date(year, 5, 1); // Jun 1
+  if (month >= 8 && month <= 10) return new Date(year, 8, 1); // Sep 1
+  if (month === 11) return new Date(year, 11, 1); // Dec 1
+  // Jan-Feb: Dec 1 of previous year
+  return new Date(year - 1, 11, 1);
+};
+
+const getCustomQuarterEnd = (date) => {
+  const month = date.getMonth();
+  const year = date.getFullYear();
+
+  if (month >= 2 && month <= 4) return new Date(year, 4, 31); // May 31
+  if (month >= 5 && month <= 7) return new Date(year, 7, 31); // Aug 31
+  if (month >= 8 && month <= 10) return new Date(year, 10, 30); // Nov 30
+  if (month === 11) return endOfMonth(new Date(year + 1, 1, 1)); // Feb end of next year
+  // Jan-Feb: Feb end of current year
+  return endOfMonth(new Date(year, 1, 1));
 };
 
 // Load data from localStorage
@@ -164,7 +207,7 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       setCurrentDate(subMonths(currentDate, 1));
     } else {
-      setCurrentDate(subQuarters(currentDate, 1));
+      setCurrentDate(subMonths(currentDate, 3));
     }
   };
 
@@ -174,7 +217,7 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       setCurrentDate(addMonths(currentDate, 1));
     } else {
-      setCurrentDate(addQuarters(currentDate, 1));
+      setCurrentDate(addMonths(currentDate, 3));
     }
   };
 
@@ -195,8 +238,8 @@ export default function ContentCalendar() {
       const end = endOfWeek(monthEnd, { weekStartsOn: 0 });
       return { start, end };
     } else {
-      const quarterStart = startOfQuarter(currentDate);
-      const quarterEnd = endOfQuarter(currentDate);
+      const quarterStart = getCustomQuarterStart(currentDate);
+      const quarterEnd = getCustomQuarterEnd(currentDate);
       const start = startOfWeek(quarterStart, { weekStartsOn: 0 });
       const end = endOfWeek(quarterEnd, { weekStartsOn: 0 });
       return { start, end };
@@ -231,9 +274,8 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       return format(currentDate, 'MMMM yyyy');
     } else {
-      const quarterStart = startOfQuarter(currentDate);
-      const quarter = Math.floor(quarterStart.getMonth() / 3) + 1;
-      return `Q${quarter} ${format(currentDate, 'yyyy')}`;
+      const { quarter, fiscalYear } = getCustomQuarter(currentDate);
+      return `Q${quarter} ${fiscalYear}`;
     }
   };
 
