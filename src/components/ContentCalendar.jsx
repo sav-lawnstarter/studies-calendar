@@ -18,6 +18,7 @@ import {
   endOfQuarter,
   addQuarters,
   subQuarters,
+  getMonth,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
@@ -30,6 +31,8 @@ const STORAGE_KEYS = {
   blockedDates: 'editorial-blocked-dates',
   hiddenEvents: 'editorial-hidden-events',
   eventOverrides: 'editorial-event-overrides',
+  stories: 'editorial-stories',
+  oooEntries: 'editorial-ooo-entries',
 };
 
 // Load data from localStorage
@@ -58,9 +61,24 @@ export default function ContentCalendar() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
 
+  // Form modal states
+  const [showAddStoryModal, setShowAddStoryModal] = useState(false);
+  const [showAddOOOModal, setShowAddOOOModal] = useState(false);
+  const [showBlockDateModal, setShowBlockDateModal] = useState(false);
+
   // Persistent state for custom blocked dates
   const [customBlockedDates, setCustomBlockedDates] = useState(() =>
     loadFromStorage(STORAGE_KEYS.blockedDates, [])
+  );
+
+  // Persistent state for stories
+  const [customStories, setCustomStories] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.stories, [])
+  );
+
+  // Persistent state for OOO entries
+  const [customOOO, setCustomOOO] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.oooEntries, [])
   );
 
   // Persistent state for hidden events (deleted events)
@@ -86,11 +104,19 @@ export default function ContentCalendar() {
     saveToStorage(STORAGE_KEYS.eventOverrides, eventOverrides);
   }, [eventOverrides]);
 
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.stories, customStories);
+  }, [customStories]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.oooEntries, customOOO);
+  }, [customOOO]);
+
   // Combine all events
   const allEvents = useMemo(() => {
     const events = [];
 
-    // Add stories (shown on publish date)
+    // Add stories from sample data (shown on publish date)
     sampleStories.forEach((story) => {
       events.push({
         ...story,
@@ -99,12 +125,33 @@ export default function ContentCalendar() {
       });
     });
 
-    // Add OOO
+    // Add custom stories
+    customStories.forEach((story) => {
+      if (!hiddenEvents.includes(story.id)) {
+        events.push({
+          ...story,
+          date: story.publishDate,
+          displayType: 'story',
+        });
+      }
+    });
+
+    // Add OOO from sample data
     sampleOOO.forEach((ooo) => {
       events.push({
         ...ooo,
         displayType: 'ooo',
       });
+    });
+
+    // Add custom OOO entries
+    customOOO.forEach((ooo) => {
+      if (!hiddenEvents.includes(ooo.id)) {
+        events.push({
+          ...ooo,
+          displayType: 'ooo',
+        });
+      }
     });
 
     // Add blocked dates from data file
@@ -143,7 +190,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [customBlockedDates, hiddenEvents, eventOverrides, customStories, customOOO]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -258,9 +305,12 @@ export default function ContentCalendar() {
   const handleEventClick = (event, e) => {
     e.stopPropagation();
     if (event.displayType === 'story') {
-      // Find the full story data
-      const fullStory = sampleStories.find((s) => s.id === event.id);
-      setSelectedStory(fullStory);
+      // Find the full story data from sample stories or custom stories
+      const fullStory = sampleStories.find((s) => s.id === event.id) ||
+                        customStories.find((s) => s.id === event.id);
+      if (fullStory) {
+        setSelectedStory(fullStory);
+      }
     } else if (['blocked', 'highTraffic', 'holiday'].includes(event.displayType)) {
       // Open edit modal for blocked dates and high traffic events
       setSelectedEvent(event);
@@ -303,6 +353,80 @@ export default function ContentCalendar() {
       return newOverrides;
     });
     setHiddenEvents(prev => prev.filter(id => id !== eventId));
+  };
+
+  // Add new story
+  const handleAddStory = (storyData) => {
+    const newStory = {
+      id: `story-${Date.now()}`,
+      ...storyData,
+      createdAt: new Date().toISOString(),
+    };
+    setCustomStories(prev => [...prev, newStory]);
+    setShowAddStoryModal(false);
+  };
+
+  // Update existing story
+  const handleUpdateStory = (storyId, updatedData) => {
+    setCustomStories(prev => prev.map(story =>
+      story.id === storyId ? { ...story, ...updatedData } : story
+    ));
+    setSelectedStory(null);
+  };
+
+  // Delete story
+  const handleDeleteStory = (storyId) => {
+    setCustomStories(prev => prev.filter(story => story.id !== storyId));
+    setSelectedStory(null);
+  };
+
+  // Add new OOO
+  const handleAddOOO = (oooData) => {
+    const newOOO = {
+      id: `ooo-${Date.now()}`,
+      type: 'ooo',
+      ...oooData,
+    };
+    setCustomOOO(prev => [...prev, newOOO]);
+    setShowAddOOOModal(false);
+  };
+
+  // Add new blocked date
+  const handleAddBlockedDate = (blockedData) => {
+    const newBlocked = {
+      id: `custom-blocked-${Date.now()}`,
+      type: 'blocked',
+      ...blockedData,
+    };
+    setCustomBlockedDates(prev => [...prev, newBlocked]);
+    setShowBlockDateModal(false);
+  };
+
+  // Export to CSV
+  const handleExportCSV = () => {
+    const rows = [['Title', 'Type', 'Date', 'End Date', 'Category', 'Notes']];
+
+    allEvents.forEach(event => {
+      rows.push([
+        event.title || '',
+        event.displayType || event.type || '',
+        event.date || '',
+        event.endDate || '',
+        event.category || '',
+        event.reason || event.notes || '',
+      ]);
+    });
+
+    const csvContent = rows.map(row =>
+      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `editorial-calendar-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   const renderEvent = (event) => {
@@ -431,6 +555,278 @@ export default function ContentCalendar() {
     );
   };
 
+  // Add Story Modal
+  const AddStoryModal = () => {
+    const [formData, setFormData] = useState({
+      title: '',
+      publishDate: format(new Date(), 'yyyy-MM-dd'),
+      author: '',
+      wordCount: '',
+      notes: '',
+    });
+
+    if (!showAddStoryModal) return null;
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (formData.title && formData.publishDate) {
+        handleAddStory({
+          ...formData,
+          wordCount: formData.wordCount ? parseInt(formData.wordCount, 10) : 0,
+        });
+        setFormData({ title: '', publishDate: format(new Date(), 'yyyy-MM-dd'), author: '', wordCount: '', notes: '' });
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddStoryModal(false)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">Add Story</h3>
+            <button onClick={() => setShowAddStoryModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Story Title *</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Publish Date *</label>
+              <input
+                type="date"
+                value={formData.publishDate}
+                onChange={(e) => setFormData(prev => ({ ...prev, publishDate: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Author</label>
+              <input
+                type="text"
+                value={formData.author}
+                onChange={(e) => setFormData(prev => ({ ...prev, author: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Word Count</label>
+              <input
+                type="number"
+                value={formData.wordCount}
+                onChange={(e) => setFormData(prev => ({ ...prev, wordCount: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setShowAddStoryModal(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button type="submit" className="flex-1 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light">
+                Add Story
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Add OOO Modal
+  const AddOOOModal = () => {
+    const [formData, setFormData] = useState({
+      title: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      endDate: '',
+      person: '',
+    });
+
+    if (!showAddOOOModal) return null;
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (formData.title && formData.date) {
+        handleAddOOO({
+          title: formData.title,
+          date: formData.date,
+          endDate: formData.endDate || formData.date,
+          person: formData.person,
+        });
+        setFormData({ title: '', date: format(new Date(), 'yyyy-MM-dd'), endDate: '', person: '' });
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddOOOModal(false)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">Add Out of Office</h3>
+            <button onClick={() => setShowAddOOOModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="e.g., John - Vacation"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Person</label>
+              <input
+                type="text"
+                value={formData.person}
+                onChange={(e) => setFormData(prev => ({ ...prev, person: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setShowAddOOOModal(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button type="submit" className="flex-1 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright">
+                Add OOO
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Block Date Modal
+  const BlockDateModal = () => {
+    const [formData, setFormData] = useState({
+      title: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      endDate: '',
+      reason: '',
+    });
+
+    if (!showBlockDateModal) return null;
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (formData.title && formData.date) {
+        handleAddBlockedDate({
+          title: formData.title,
+          date: formData.date,
+          endDate: formData.endDate || undefined,
+          reason: formData.reason,
+        });
+        setFormData({ title: '', date: format(new Date(), 'yyyy-MM-dd'), endDate: '', reason: '' });
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowBlockDateModal(false)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">Block Date</h3>
+            <button onClick={() => setShowBlockDateModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="e.g., Company Event"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+              <textarea
+                value={formData.reason}
+                onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                rows={2}
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setShowBlockDateModal(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button type="submit" className="flex-1 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright">
+                Block Date
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   // Count hidden events
   const hiddenCount = hiddenEvents.length;
 
@@ -485,19 +881,31 @@ export default function ContentCalendar() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
+            <button
+              onClick={() => setShowAddStoryModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+            >
               <Plus size={18} />
               Add Story
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors">
+            <button
+              onClick={() => setShowAddOOOModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
+            >
               <Calendar size={18} />
               Add OOO
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-ls-orange text-ls-orange rounded-lg hover:bg-ls-orange-light transition-colors">
+            <button
+              onClick={() => setShowBlockDateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-ls-orange text-ls-orange rounded-lg hover:bg-ls-orange-light transition-colors"
+            >
               <Ban size={18} />
               Block Date
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
               <Download size={18} />
               Export CSV
             </button>
@@ -555,49 +963,67 @@ export default function ContentCalendar() {
 
         {/* Calendar Body */}
         <div className="flex-1">
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="grid grid-cols-7 border-b">
-              {week.map((day) => {
-                const dayEvents = getEventsForDay(day);
-                const isToday = isSameDay(day, new Date());
-                const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+          {weeks.map((week, weekIndex) => {
+            // For Quarter view, check if we need a month header
+            const showMonthHeader = viewMode === 'Quarter' && (
+              weekIndex === 0 ||
+              getMonth(week[0]) !== getMonth(weeks[weekIndex - 1][0])
+            );
 
-                return (
-                  <div
-                    key={day.toISOString()}
-                    className={`
-                      min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
-                      ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
-                    `}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
+            return (
+              <React.Fragment key={weekIndex}>
+                {/* Month header for Quarter view */}
+                {showMonthHeader && (
+                  <div className="bg-ls-green-lighter border-b border-ls-green/30 px-4 py-2 sticky z-10">
+                    <span className="text-ls-green font-semibold text-sm">
+                      {format(week[0], 'MMMM yyyy')}
+                    </span>
+                  </div>
+                )}
+                <div className="grid grid-cols-7 border-b">
+                  {week.map((day) => {
+                    const dayEvents = getEventsForDay(day);
+                    const isToday = isSameDay(day, new Date());
+                    const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+
+                    return (
+                      <div
+                        key={day.toISOString()}
                         className={`
-                          text-sm font-medium
-                          ${isToday
-                            ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
-                            : isCurrentMonth
-                              ? 'text-gray-900'
-                              : 'text-gray-400'
-                          }
+                          min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
+                          ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
                         `}
                       >
-                        {format(day, 'd')}
-                      </span>
-                    </div>
-                    <div className="space-y-1 overflow-y-auto max-h-[90px]">
-                      {dayEvents.slice(0, 4).map(renderEvent)}
-                      {dayEvents.length > 4 && (
-                        <div className="text-xs text-gray-500 px-2">
-                          +{dayEvents.length - 4} more
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={`
+                              text-sm font-medium
+                              ${isToday
+                                ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
+                                : isCurrentMonth
+                                  ? 'text-gray-900'
+                                  : 'text-gray-400'
+                              }
+                            `}
+                          >
+                            {format(day, 'd')}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                        <div className="space-y-1 overflow-y-auto max-h-[90px]">
+                          {dayEvents.slice(0, 4).map(renderEvent)}
+                          {dayEvents.length > 4 && (
+                            <div className="text-xs text-gray-500 px-2">
+                              +{dayEvents.length - 4} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
@@ -606,11 +1032,22 @@ export default function ContentCalendar() {
         <StoryDetailModal
           story={selectedStory}
           onClose={() => setSelectedStory(null)}
+          onEdit={handleUpdateStory}
+          onDelete={handleDeleteStory}
         />
       )}
 
       {/* Event Edit Modal */}
       <EventEditModal />
+
+      {/* Add Story Modal */}
+      <AddStoryModal />
+
+      {/* Add OOO Modal */}
+      <AddOOOModal />
+
+      {/* Block Date Modal */}
+      <BlockDateModal />
     </div>
   );
 }

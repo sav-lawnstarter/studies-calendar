@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   X,
   ExternalLink,
@@ -12,10 +12,43 @@ import {
   Clock,
   Link2,
   StickyNote,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 
-export default function StoryDetailModal({ story, onClose }) {
+export default function StoryDetailModal({ story, onClose, onEdit, onDelete }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({
+    title: story?.title || '',
+    author: story?.author || story?.assignee || '',
+    publishDate: story?.publishDate || '',
+    notes: story?.notes || '',
+    wordCount: story?.wordCount || story?.metrics?.currentWords || 0,
+  });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   if (!story) return null;
+
+  const isCustomStory = story.id?.startsWith('story-');
+
+  const handleSaveEdit = () => {
+    if (onEdit && editData.title) {
+      onEdit(story.id, {
+        title: editData.title,
+        author: editData.author,
+        publishDate: editData.publishDate,
+        notes: editData.notes,
+        wordCount: parseInt(editData.wordCount, 10) || 0,
+      });
+      setIsEditing(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (onDelete) {
+      onDelete(story.id);
+    }
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -55,7 +88,7 @@ export default function StoryDetailModal({ story, onClose }) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden modal-content"
+        className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden modal-content relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -232,17 +265,149 @@ export default function StoryDetailModal({ story, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="border-t bg-gray-50 px-6 py-4 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-          >
-            Close
-          </button>
-          <button className="px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
-            Edit Story
-          </button>
+        <div className="border-t bg-gray-50 px-6 py-4 flex justify-between">
+          <div>
+            {isCustomStory && onDelete && (
+              showDeleteConfirm ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-red-600">Delete this story?</span>
+                  <button
+                    onClick={handleDelete}
+                    className="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors"
+                  >
+                    Yes, Delete
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="px-3 py-1 border border-gray-300 text-gray-600 text-sm rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                  <Trash2 size={18} />
+                  Delete
+                </button>
+              )
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              Close
+            </button>
+            {isCustomStory && onEdit && (
+              isEditing ? (
+                <>
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    className="px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+                  >
+                    Save Changes
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+                >
+                  <Edit2 size={18} />
+                  Edit Story
+                </button>
+              )
+            )}
+          </div>
         </div>
+
+        {/* Edit Form Overlay */}
+        {isEditing && (
+          <div className="absolute inset-0 bg-white rounded-xl flex flex-col">
+            <div className="bg-ls-green p-6 text-white">
+              <div className="flex items-start justify-between">
+                <h2 className="text-2xl font-bold">Edit Story</h2>
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 flex-1 overflow-y-auto space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Story Title *</label>
+                <input
+                  type="text"
+                  value={editData.title}
+                  onChange={(e) => setEditData(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Author</label>
+                <input
+                  type="text"
+                  value={editData.author}
+                  onChange={(e) => setEditData(prev => ({ ...prev, author: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Publish Date</label>
+                <input
+                  type="date"
+                  value={editData.publishDate}
+                  onChange={(e) => setEditData(prev => ({ ...prev, publishDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Word Count</label>
+                <input
+                  type="number"
+                  value={editData.wordCount}
+                  onChange={(e) => setEditData(prev => ({ ...prev, wordCount: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={editData.notes}
+                  onChange={(e) => setEditData(prev => ({ ...prev, notes: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                  rows={4}
+                />
+              </div>
+            </div>
+            <div className="border-t bg-gray-50 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setIsEditing(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
