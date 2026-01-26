@@ -260,11 +260,65 @@ export default function ContentCalendar() {
     return days;
   };
 
+  // Generate weeks grouped by month for quarterly view
+  const generateMonthlyWeeks = () => {
+    const quarterStart = getCustomQuarterStart(currentDate);
+    const quarterEnd = getCustomQuarterEnd(currentDate);
+    const months = [];
+
+    let currentMonth = quarterStart;
+    while (currentMonth <= quarterEnd) {
+      const monthStart = startOfMonth(currentMonth);
+      const monthEnd = endOfMonth(currentMonth);
+      const weekStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+      const weekEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+
+      const monthWeeks = [];
+      let day = weekStart;
+      let currentWeek = [];
+
+      while (day <= weekEnd) {
+        // Add null for days outside the current month
+        if (isSameMonth(day, monthStart)) {
+          currentWeek.push(day);
+        } else {
+          currentWeek.push(null);
+        }
+
+        if (currentWeek.length === 7) {
+          monthWeeks.push(currentWeek);
+          currentWeek = [];
+        }
+        day = addDays(day, 1);
+      }
+
+      if (currentWeek.length > 0) {
+        // Pad the last week with nulls
+        while (currentWeek.length < 7) {
+          currentWeek.push(null);
+        }
+        monthWeeks.push(currentWeek);
+      }
+
+      months.push({
+        month: monthStart,
+        weeks: monthWeeks,
+      });
+
+      currentMonth = addMonths(currentMonth, 1);
+    }
+
+    return months;
+  };
+
   const days = generateDays();
   const weeks = [];
   for (let i = 0; i < days.length; i += 7) {
     weeks.push(days.slice(i, i + 7));
   }
+
+  // For quarterly view, use monthly grouped weeks
+  const monthlyData = viewMode === 'Quarter' ? generateMonthlyWeeks() : null;
 
   // Get title based on view mode
   const getTitle = () => {
@@ -597,49 +651,112 @@ export default function ContentCalendar() {
 
         {/* Calendar Body */}
         <div className="flex-1">
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="grid grid-cols-7 border-b">
-              {week.map((day) => {
-                const dayEvents = getEventsForDay(day);
-                const isToday = isSameDay(day, new Date());
-                const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+          {viewMode === 'Quarter' && monthlyData ? (
+            // Quarterly view: render month by month with headers
+            monthlyData.map((monthData, monthIndex) => (
+              <div key={monthIndex}>
+                {/* Month Header */}
+                <div className="bg-green-50 px-4 py-2 border-b sticky top-[45px] z-10">
+                  <span className="text-ls-green font-semibold">
+                    {format(monthData.month, 'MMMM yyyy')}
+                  </span>
+                </div>
+                {/* Month Weeks */}
+                {monthData.weeks.map((week, weekIndex) => (
+                  <div key={weekIndex} className="grid grid-cols-7 border-b">
+                    {week.map((day, dayIndex) => {
+                      if (day === null) {
+                        // Empty cell for days outside the month
+                        return (
+                          <div
+                            key={`empty-${dayIndex}`}
+                            className="min-h-[120px] border-r last:border-r-0 p-2 bg-gray-50"
+                          />
+                        );
+                      }
 
-                return (
-                  <div
-                    key={day.toISOString()}
-                    className={`
-                      min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
-                      ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
-                    `}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className={`
-                          text-sm font-medium
-                          ${isToday
-                            ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
-                            : isCurrentMonth
-                              ? 'text-gray-900'
-                              : 'text-gray-400'
-                          }
-                        `}
-                      >
-                        {format(day, 'd')}
-                      </span>
-                    </div>
-                    <div className="space-y-1 overflow-y-auto max-h-[90px]">
-                      {dayEvents.slice(0, 4).map(renderEvent)}
-                      {dayEvents.length > 4 && (
-                        <div className="text-xs text-gray-500 px-2">
-                          +{dayEvents.length - 4} more
+                      const dayEvents = getEventsForDay(day);
+                      const isToday = isSameDay(day, new Date());
+
+                      return (
+                        <div
+                          key={day.toISOString()}
+                          className="min-h-[120px] border-r last:border-r-0 p-2 calendar-cell bg-white"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span
+                              className={`
+                                text-sm font-medium
+                                ${isToday
+                                  ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
+                                  : 'text-gray-900'
+                                }
+                              `}
+                            >
+                              {format(day, 'd')}
+                            </span>
+                          </div>
+                          <div className="space-y-1 overflow-y-auto max-h-[90px]">
+                            {dayEvents.slice(0, 4).map(renderEvent)}
+                            {dayEvents.length > 4 && (
+                              <div className="text-xs text-gray-500 px-2">
+                                +{dayEvents.length - 4} more
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          ))}
+                ))}
+              </div>
+            ))
+          ) : (
+            // Week and Month view: standard layout
+            weeks.map((week, weekIndex) => (
+              <div key={weekIndex} className="grid grid-cols-7 border-b">
+                {week.map((day) => {
+                  const dayEvents = getEventsForDay(day);
+                  const isToday = isSameDay(day, new Date());
+                  const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`
+                        min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
+                        ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
+                      `}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`
+                            text-sm font-medium
+                            ${isToday
+                              ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
+                              : isCurrentMonth
+                                ? 'text-gray-900'
+                                : 'text-gray-400'
+                            }
+                          `}
+                        >
+                          {format(day, 'd')}
+                        </span>
+                      </div>
+                      <div className="space-y-1 overflow-y-auto max-h-[90px]">
+                        {dayEvents.slice(0, 4).map(renderEvent)}
+                        {dayEvents.length > 4 && (
+                          <div className="text-xs text-gray-500 px-2">
+                            +{dayEvents.length - 4} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))
+          )}
         </div>
       </div>
 
