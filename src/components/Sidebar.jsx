@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight } from 'lucide-react';
+import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight, Link2 } from 'lucide-react';
 
 const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
@@ -7,6 +7,7 @@ const navItems = [
   { id: 'story-archive', label: 'Story Archive', icon: Archive },
   { id: 'story-ideation', label: 'Story Ideation', icon: Lightbulb },
   { id: 'competitor-log', label: 'Competitor Log', icon: FileText },
+  { id: 'sources', label: 'Sources', icon: Link2 },
 ];
 
 export default function Sidebar({ activeView, setActiveView }) {

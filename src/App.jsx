@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
+import { AppDataProvider } from './context/AppDataContext';
 import Sidebar from './components/Sidebar';
 import ContentCalendar from './components/ContentCalendar';
 import RunningTotals from './components/RunningTotals';
 import StoryArchive from './components/StoryArchive';
 import StoryIdeation from './components/StoryIdeation';
 import CompetitorLog from './components/CompetitorLog';
+import Sources from './components/Sources';
 
-function App() {
+function AppContent() {
   const [activeView, setActiveView] = useState('content-calendar');
 
   const renderView = () => {
@@ -21,6 +23,8 @@ function App() {
         return <StoryIdeation />;
       case 'competitor-log':
         return <CompetitorLog />;
+      case 'sources':
+        return <Sources />;
       default:
         return <ContentCalendar />;
     }
@@ -36,6 +40,14 @@ function App() {
         {renderView()}
       </main>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AppDataProvider>
+      <AppContent />
+    </AppDataProvider>
   );
 }
 
