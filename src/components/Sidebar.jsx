@@ -12,18 +12,14 @@ const navItems = [
 export default function Sidebar({ activeView, setActiveView }) {
   return (
     <aside className="w-64 bg-ls-green h-screen flex flex-col fixed left-0 top-0">
-      {/* Logo and Branding */}
+      {/* Logo */}
       <div className="p-6 border-b border-white/20">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-center">
           <img
             src="/LawnStarter_new_logo.png"
-            alt="LawnStarter"
-            className="w-10 h-10 rounded-lg bg-white p-1"
+            alt="LawnStarter Editorial Dashboard"
+            className="h-12 rounded-lg bg-white p-1"
           />
-          <div>
-            <h1 className="text-white font-bold text-lg leading-tight">LawnStarter</h1>
-            <p className="text-white/70 text-xs">Editorial Dashboard</p>
-          </div>
         </div>
       </div>
 

@@ -14,6 +14,7 @@ import {
   isSameDay,
   isWithinInterval,
   parseISO,
+  getMonth,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
@@ -101,6 +102,19 @@ export default function ContentCalendar() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
 
+  // Modal states for action buttons
+  const [showAddStoryModal, setShowAddStoryModal] = useState(false);
+  const [showAddOOOModal, setShowAddOOOModal] = useState(false);
+  const [showBlockDateModal, setShowBlockDateModal] = useState(false);
+
+  // Custom data states with localStorage persistence
+  const [customStories, setCustomStories] = useState(() =>
+    loadFromStorage('editorial-custom-stories', [])
+  );
+  const [customOOO, setCustomOOO] = useState(() =>
+    loadFromStorage('editorial-custom-ooo', [])
+  );
+
   // Persistent state for custom blocked dates
   const [customBlockedDates, setCustomBlockedDates] = useState(() =>
     loadFromStorage(STORAGE_KEYS.blockedDates, [])
@@ -129,6 +143,14 @@ export default function ContentCalendar() {
     saveToStorage(STORAGE_KEYS.eventOverrides, eventOverrides);
   }, [eventOverrides]);
 
+  useEffect(() => {
+    saveToStorage('editorial-custom-stories', customStories);
+  }, [customStories]);
+
+  useEffect(() => {
+    saveToStorage('editorial-custom-ooo', customOOO);
+  }, [customOOO]);
+
   // Combine all events
   const allEvents = useMemo(() => {
     const events = [];
@@ -142,8 +164,25 @@ export default function ContentCalendar() {
       });
     });
 
+    // Add custom stories
+    customStories.forEach((story) => {
+      events.push({
+        ...story,
+        date: story.publishDate,
+        displayType: 'story',
+      });
+    });
+
     // Add OOO
     sampleOOO.forEach((ooo) => {
+      events.push({
+        ...ooo,
+        displayType: 'ooo',
+      });
+    });
+
+    // Add custom OOO
+    customOOO.forEach((ooo) => {
       events.push({
         ...ooo,
         displayType: 'ooo',
@@ -186,7 +225,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [customBlockedDates, hiddenEvents, eventOverrides, customStories, customOOO]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -345,6 +384,71 @@ export default function ContentCalendar() {
       return newOverrides;
     });
     setHiddenEvents(prev => prev.filter(id => id !== eventId));
+  };
+
+  // Handler for adding a new story
+  const handleAddStory = (storyData) => {
+    const newStory = {
+      id: `custom-story-${Date.now()}`,
+      title: storyData.title,
+      publishDate: storyData.date,
+      status: 'Planned',
+      author: storyData.author || 'Editorial Team',
+      category: storyData.category || 'General',
+    };
+    setCustomStories(prev => [...prev, newStory]);
+    setShowAddStoryModal(false);
+  };
+
+  // Handler for adding OOO
+  const handleAddOOO = (oooData) => {
+    const newOOO = {
+      id: `custom-ooo-${Date.now()}`,
+      title: `${oooData.person} - OOO`,
+      date: oooData.startDate,
+      endDate: oooData.endDate || oooData.startDate,
+      person: oooData.person,
+      type: 'ooo',
+    };
+    setCustomOOO(prev => [...prev, newOOO]);
+    setShowAddOOOModal(false);
+  };
+
+  // Handler for adding blocked date
+  const handleAddBlockedDate = (blockedData) => {
+    const newBlocked = {
+      id: `custom-blocked-${Date.now()}`,
+      title: blockedData.reason || 'Blocked',
+      date: blockedData.date,
+      endDate: blockedData.endDate || blockedData.date,
+      type: blockedData.type || 'blocked',
+      reason: blockedData.reason,
+    };
+    setCustomBlockedDates(prev => [...prev, newBlocked]);
+    setShowBlockDateModal(false);
+  };
+
+  // Handler for exporting to CSV
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Type', 'Title', 'Author/Person', 'Category/Reason'];
+    const rows = allEvents.map(event => [
+      event.date,
+      event.displayType,
+      event.title,
+      event.author || event.person || '',
+      event.category || event.reason || '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `editorial-calendar-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
   };
 
   const renderEvent = (event) => {
@@ -527,19 +631,31 @@ export default function ContentCalendar() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
+            <button
+              onClick={() => setShowAddStoryModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+            >
               <Plus size={18} />
               Add Story
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors">
+            <button
+              onClick={() => setShowAddOOOModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
+            >
               <Calendar size={18} />
               Add OOO
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-ls-orange text-ls-orange rounded-lg hover:bg-ls-orange-light transition-colors">
+            <button
+              onClick={() => setShowBlockDateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-ls-orange text-ls-orange rounded-lg hover:bg-ls-orange-light transition-colors"
+            >
               <Ban size={18} />
               Block Date
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
               <Download size={18} />
               Export CSV
             </button>
@@ -597,49 +713,66 @@ export default function ContentCalendar() {
 
         {/* Calendar Body */}
         <div className="flex-1">
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="grid grid-cols-7 border-b">
-              {week.map((day) => {
-                const dayEvents = getEventsForDay(day);
-                const isToday = isSameDay(day, new Date());
-                const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+          {weeks.map((week, weekIndex) => {
+            // Show month header in Quarter view when month changes
+            const showMonthHeader = viewMode === 'Quarter' && (
+              weekIndex === 0 ||
+              getMonth(week[0]) !== getMonth(weeks[weekIndex - 1][0])
+            );
 
-                return (
-                  <div
-                    key={day.toISOString()}
-                    className={`
-                      min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
-                      ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
-                    `}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
+            return (
+              <React.Fragment key={weekIndex}>
+                {showMonthHeader && (
+                  <div className="bg-ls-green-lighter border-b border-ls-green/30 px-4 py-2 sticky z-10">
+                    <span className="text-ls-green font-semibold text-sm">
+                      {format(week[0], 'MMMM yyyy')}
+                    </span>
+                  </div>
+                )}
+                <div className="grid grid-cols-7 border-b">
+                  {week.map((day) => {
+                    const dayEvents = getEventsForDay(day);
+                    const isToday = isSameDay(day, new Date());
+                    const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+
+                    return (
+                      <div
+                        key={day.toISOString()}
                         className={`
-                          text-sm font-medium
-                          ${isToday
-                            ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
-                            : isCurrentMonth
-                              ? 'text-gray-900'
-                              : 'text-gray-400'
-                          }
+                          min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
+                          ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
                         `}
                       >
-                        {format(day, 'd')}
-                      </span>
-                    </div>
-                    <div className="space-y-1 overflow-y-auto max-h-[90px]">
-                      {dayEvents.slice(0, 4).map(renderEvent)}
-                      {dayEvents.length > 4 && (
-                        <div className="text-xs text-gray-500 px-2">
-                          +{dayEvents.length - 4} more
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={`
+                              text-sm font-medium
+                              ${isToday
+                                ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
+                                : isCurrentMonth
+                                  ? 'text-gray-900'
+                                  : 'text-gray-400'
+                              }
+                            `}
+                          >
+                            {format(day, 'd')}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                        <div className="space-y-1 overflow-y-auto max-h-[90px]">
+                          {dayEvents.slice(0, 4).map(renderEvent)}
+                          {dayEvents.length > 4 && (
+                            <div className="text-xs text-gray-500 px-2">
+                              +{dayEvents.length - 4} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
@@ -653,6 +786,239 @@ export default function ContentCalendar() {
 
       {/* Event Edit Modal */}
       <EventEditModal />
+
+      {/* Add Story Modal */}
+      {showAddStoryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddStoryModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Add New Story</h3>
+              <button
+                onClick={() => setShowAddStoryModal(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              handleAddStory({
+                title: formData.get('title'),
+                date: formData.get('date'),
+                author: formData.get('author'),
+                category: formData.get('category'),
+              });
+            }} className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Story Title *</label>
+                <input
+                  type="text"
+                  name="title"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                  placeholder="Enter story title"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Publish Date *</label>
+                <input
+                  type="date"
+                  name="date"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Author</label>
+                <input
+                  type="text"
+                  name="author"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                  placeholder="Author name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  name="category"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                >
+                  <option value="Lawn Care">Lawn Care</option>
+                  <option value="Landscaping">Landscaping</option>
+                  <option value="Pest Control">Pest Control</option>
+                  <option value="Seasonal">Seasonal</option>
+                  <option value="General">General</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddStoryModal(false)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+                >
+                  Add Story
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add OOO Modal */}
+      {showAddOOOModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddOOOModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Add Out of Office</h3>
+              <button
+                onClick={() => setShowAddOOOModal(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              handleAddOOO({
+                person: formData.get('person'),
+                startDate: formData.get('startDate'),
+                endDate: formData.get('endDate'),
+              });
+            }} className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Team Member *</label>
+                <input
+                  type="text"
+                  name="person"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                  placeholder="Enter name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  name="startDate"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  name="endDate"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddOOOModal(false)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
+                >
+                  Add OOO
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Block Date Modal */}
+      {showBlockDateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowBlockDateModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Block Date</h3>
+              <button
+                onClick={() => setShowBlockDateModal(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              handleAddBlockedDate({
+                reason: formData.get('reason'),
+                date: formData.get('date'),
+                endDate: formData.get('endDate'),
+                type: formData.get('type'),
+              });
+            }} className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+                <input
+                  type="text"
+                  name="reason"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                  placeholder="Enter reason for blocking"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  name="date"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  name="endDate"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  name="type"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-ls-orange"
+                >
+                  <option value="blocked">Blocked</option>
+                  <option value="highTraffic">High Traffic</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowBlockDateModal(false)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
+                >
+                  Block Date
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
