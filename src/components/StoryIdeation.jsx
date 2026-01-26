@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Lightbulb } from 'lucide-react';
+import { useAppData } from '../context/AppDataContext';
 
 export default function StoryIdeation() {
-  const [ideas, setIdeas] = useState([]);
+  const { ideas, addIdea, deleteIdea } = useAppData();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -19,18 +20,18 @@ export default function StoryIdeation() {
     e.preventDefault();
     if (!formData.title.trim()) return;
 
-    const newIdea = {
-      id: Date.now(),
-      ...formData,
-      createdAt: new Date().toLocaleDateString(),
-    };
+    addIdea({
+      title: formData.title,
+      description: formData.description,
+      metrics: formData.metrics,
+      newsPeg: formData.newsPeg,
+    });
 
-    setIdeas((prev) => [newIdea, ...prev]);
     setFormData({ title: '', description: '', metrics: '', newsPeg: '' });
   };
 
   const handleDelete = (id) => {
-    setIdeas((prev) => prev.filter((idea) => idea.id !== id));
+    deleteIdea(id);
   };
 
   return (

@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
-import { Search, Filter, ExternalLink, ChevronDown, Eye, Clock } from 'lucide-react';
-import { sampleStories } from '../data/events';
+import { Search, ExternalLink, ChevronDown, Eye, Archive } from 'lucide-react';
+import { useAppData } from '../context/AppDataContext';
 import StoryDetailModal from './StoryDetailModal';
 
 export default function StoryArchive() {
+  const { stories } = useAppData();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedStory, setSelectedStory] = useState(null);
 
-  const filteredStories = sampleStories.filter((story) => {
+  const filteredStories = stories.filter((story) => {
     const matchesSearch =
-      story.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      story.assignee.toLowerCase().includes(searchQuery.toLowerCase());
+      story.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      story.assignee?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'All' || story.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -111,15 +112,15 @@ export default function StoryArchive() {
                       {story.priority}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-gray-600">{story.assignee}</td>
-                  <td className="px-6 py-4 text-gray-600">{story.dueDate}</td>
-                  <td className="px-6 py-4 text-gray-600">{story.publishDate}</td>
+                  <td className="px-6 py-4 text-gray-600">{story.assignee || '-'}</td>
+                  <td className="px-6 py-4 text-gray-600">{story.dueDate || '-'}</td>
+                  <td className="px-6 py-4 text-gray-600">{story.publishDate || '-'}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-ls-green rounded-full"
-                          style={{ width: `${progress}%` }}
+                          style={{ width: `${Math.min(progress, 100)}%` }}
                         />
                       </div>
                       <span className="text-xs text-gray-500">{progress}%</span>
@@ -155,7 +156,12 @@ export default function StoryArchive() {
 
         {filteredStories.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-gray-500">No stories found matching your criteria.</p>
+            <Archive size={48} className="mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500">
+              {stories.length === 0
+                ? 'No stories yet. Add stories from the Content Calendar.'
+                : 'No stories found matching your criteria.'}
+            </p>
           </div>
         )}
       </div>
