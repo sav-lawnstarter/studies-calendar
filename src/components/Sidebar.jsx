@@ -18,7 +18,7 @@ export default function Sidebar({ activeView, setActiveView }) {
           <img
             src="/LawnStarter_new_logo.png"
             alt="LawnStarter"
-            className="w-10 h-10 rounded-lg bg-white p-1"
+            className="h-10 w-auto max-w-[120px] rounded-lg bg-white p-1 object-contain"
           />
           <div>
             <h1 className="text-white font-bold text-lg leading-tight">LawnStarter</h1>
