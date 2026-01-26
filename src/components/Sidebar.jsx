@@ -1,11 +1,12 @@
 import React from 'react';
-import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight } from 'lucide-react';
+import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight, PieChart } from 'lucide-react';
 
 const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
   { id: 'running-totals', label: 'Running Totals', icon: BarChart3 },
   { id: 'story-archive', label: 'Story Archive', icon: Archive },
   { id: 'story-ideation', label: 'Story Ideation', icon: Lightbulb },
+  { id: 'story-pitch-analysis', label: 'Story & Pitch Analysis', icon: PieChart },
   { id: 'competitor-log', label: 'Competitor Log', icon: FileText },
 ];
 
