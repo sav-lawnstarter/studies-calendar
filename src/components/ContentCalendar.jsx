@@ -14,11 +14,105 @@ import {
   isSameDay,
   isWithinInterval,
   parseISO,
-  startOfQuarter,
-  endOfQuarter,
-  addQuarters,
-  subQuarters,
 } from 'date-fns';
+
+// Custom fiscal quarter helper functions
+// Q4: Dec 1 - Feb 28/29, Q1: Mar 1 - May 31, Q2: Jun 1 - Aug 31, Q3: Sep 1 - Nov 30
+const getFiscalQuarterInfo = (date) => {
+  const month = date.getMonth(); // 0-indexed (0 = January)
+  const year = date.getFullYear();
+
+  if (month === 11) { // December
+    // Q4 of current calendar year
+    const fiscalYear = year % 100;
+    const endYear = year + 1;
+    const lastDayOfFeb = new Date(endYear, 2, 0).getDate();
+    return {
+      quarter: 4,
+      fiscalYear,
+      start: new Date(year, 11, 1), // Dec 1
+      end: new Date(endYear, 1, lastDayOfFeb) // Feb 28/29
+    };
+  } else if (month <= 1) { // January, February
+    // Q4 of previous calendar year
+    const fiscalYear = (year - 1) % 100;
+    const lastDayOfFeb = new Date(year, 2, 0).getDate();
+    return {
+      quarter: 4,
+      fiscalYear,
+      start: new Date(year - 1, 11, 1), // Dec 1 of prev year
+      end: new Date(year, 1, lastDayOfFeb) // Feb 28/29
+    };
+  } else if (month <= 4) { // March, April, May
+    // Q1
+    return {
+      quarter: 1,
+      fiscalYear: year % 100,
+      start: new Date(year, 2, 1), // Mar 1
+      end: new Date(year, 4, 31) // May 31
+    };
+  } else if (month <= 7) { // June, July, August
+    // Q2
+    return {
+      quarter: 2,
+      fiscalYear: year % 100,
+      start: new Date(year, 5, 1), // Jun 1
+      end: new Date(year, 7, 31) // Aug 31
+    };
+  } else { // September, October, November (months 8, 9, 10)
+    // Q3
+    return {
+      quarter: 3,
+      fiscalYear: year % 100,
+      start: new Date(year, 8, 1), // Sep 1
+      end: new Date(year, 10, 30) // Nov 30
+    };
+  }
+};
+
+// Navigate to previous fiscal quarter
+const navigateToPrevFiscalQuarter = (date) => {
+  const { quarter } = getFiscalQuarterInfo(date);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  if (quarter === 4) {
+    // Previous is Q3 - Sep-Nov
+    const targetYear = month === 11 ? year : year - 1;
+    return new Date(targetYear, 9, 1); // October
+  } else if (quarter === 1) {
+    // Previous is Q4 - Dec-Feb
+    return new Date(year, 0, 1); // January (middle of Q4)
+  } else if (quarter === 2) {
+    // Previous is Q1 - Mar-May
+    return new Date(year, 3, 1); // April
+  } else { // quarter === 3
+    // Previous is Q2 - Jun-Aug
+    return new Date(year, 6, 1); // July
+  }
+};
+
+// Navigate to next fiscal quarter
+const navigateToNextFiscalQuarter = (date) => {
+  const { quarter } = getFiscalQuarterInfo(date);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  if (quarter === 4) {
+    // Next is Q1 - Mar-May
+    const targetYear = month === 11 ? year + 1 : year;
+    return new Date(targetYear, 3, 1); // April
+  } else if (quarter === 1) {
+    // Next is Q2 - Jun-Aug
+    return new Date(year, 6, 1); // July
+  } else if (quarter === 2) {
+    // Next is Q3 - Sep-Nov
+    return new Date(year, 9, 1); // October
+  } else { // quarter === 3
+    // Next is Q4 - Dec-Feb
+    return new Date(year, 11, 1); // December
+  }
+};
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
@@ -164,7 +258,7 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       setCurrentDate(subMonths(currentDate, 1));
     } else {
-      setCurrentDate(subQuarters(currentDate, 1));
+      setCurrentDate(navigateToPrevFiscalQuarter(currentDate));
     }
   };
 
@@ -174,7 +268,7 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       setCurrentDate(addMonths(currentDate, 1));
     } else {
-      setCurrentDate(addQuarters(currentDate, 1));
+      setCurrentDate(navigateToNextFiscalQuarter(currentDate));
     }
   };
 
@@ -195,10 +289,9 @@ export default function ContentCalendar() {
       const end = endOfWeek(monthEnd, { weekStartsOn: 0 });
       return { start, end };
     } else {
-      const quarterStart = startOfQuarter(currentDate);
-      const quarterEnd = endOfQuarter(currentDate);
-      const start = startOfWeek(quarterStart, { weekStartsOn: 0 });
-      const end = endOfWeek(quarterEnd, { weekStartsOn: 0 });
+      const fiscalInfo = getFiscalQuarterInfo(currentDate);
+      const start = startOfWeek(fiscalInfo.start, { weekStartsOn: 0 });
+      const end = endOfWeek(fiscalInfo.end, { weekStartsOn: 0 });
       return { start, end };
     }
   };
@@ -231,9 +324,8 @@ export default function ContentCalendar() {
     } else if (viewMode === 'Month') {
       return format(currentDate, 'MMMM yyyy');
     } else {
-      const quarterStart = startOfQuarter(currentDate);
-      const quarter = Math.floor(quarterStart.getMonth() / 3) + 1;
-      return `Q${quarter} ${format(currentDate, 'yyyy')}`;
+      const fiscalInfo = getFiscalQuarterInfo(currentDate);
+      return `Q${fiscalInfo.quarter} ${fiscalInfo.fiscalYear}`;
     }
   };
 

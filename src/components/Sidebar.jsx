@@ -4,7 +4,7 @@ import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight } from 
 const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
   { id: 'running-totals', label: 'Running Totals', icon: BarChart3 },
-  { id: 'story-archive', label: 'Story Archive', icon: Archive },
+  { id: 'story-archive', label: 'Story and Pitch Analysis', icon: Archive },
   { id: 'story-ideation', label: 'Story Ideation', icon: Lightbulb },
   { id: 'competitor-log', label: 'Competitor Log', icon: FileText },
 ];
