@@ -20,8 +20,9 @@ import {
   subQuarters,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
-import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
+import { preloadedEvents, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
+import AddStoryModal from './AddStoryModal';
 
 const viewModes = ['Week', 'Month', 'Quarter'];
 
@@ -30,6 +31,7 @@ const STORAGE_KEYS = {
   blockedDates: 'editorial-blocked-dates',
   hiddenEvents: 'editorial-hidden-events',
   eventOverrides: 'editorial-event-overrides',
+  stories: 'editorial-stories',
 };
 
 // Load data from localStorage
@@ -57,6 +59,13 @@ export default function ContentCalendar() {
   const [selectedStory, setSelectedStory] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [showAddStoryModal, setShowAddStoryModal] = useState(false);
+  const [editingStory, setEditingStory] = useState(null);
+
+  // Persistent state for stories
+  const [stories, setStories] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.stories, [])
+  );
 
   // Persistent state for custom blocked dates
   const [customBlockedDates, setCustomBlockedDates] = useState(() =>
@@ -86,15 +95,19 @@ export default function ContentCalendar() {
     saveToStorage(STORAGE_KEYS.eventOverrides, eventOverrides);
   }, [eventOverrides]);
 
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.stories, stories);
+  }, [stories]);
+
   // Combine all events
   const allEvents = useMemo(() => {
     const events = [];
 
-    // Add stories (shown on publish date)
-    sampleStories.forEach((story) => {
+    // Add stories (shown on pitch date)
+    stories.forEach((story) => {
       events.push({
         ...story,
-        date: story.publishDate,
+        date: story.pitchDate,
         displayType: 'story',
       });
     });
@@ -143,7 +156,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [stories, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -259,12 +272,42 @@ export default function ContentCalendar() {
     e.stopPropagation();
     if (event.displayType === 'story') {
       // Find the full story data
-      const fullStory = sampleStories.find((s) => s.id === event.id);
+      const fullStory = stories.find((s) => s.id === event.id);
       setSelectedStory(fullStory);
     } else if (['blocked', 'highTraffic', 'holiday'].includes(event.displayType)) {
       // Open edit modal for blocked dates and high traffic events
       setSelectedEvent(event);
       setShowEventModal(true);
+    }
+  };
+
+  // Story management handlers
+  const handleSaveStory = (storyData) => {
+    setStories((prev) => {
+      const existingIndex = prev.findIndex((s) => s.id === storyData.id);
+      if (existingIndex >= 0) {
+        // Update existing story
+        const updated = [...prev];
+        updated[existingIndex] = storyData;
+        return updated;
+      } else {
+        // Add new story
+        return [...prev, storyData];
+      }
+    });
+    setEditingStory(null);
+  };
+
+  const handleEditStory = (story) => {
+    setSelectedStory(null);
+    setEditingStory(story);
+    setShowAddStoryModal(true);
+  };
+
+  const handleDeleteStory = (storyId) => {
+    if (window.confirm('Are you sure you want to delete this story?')) {
+      setStories((prev) => prev.filter((s) => s.id !== storyId));
+      setSelectedStory(null);
     }
   };
 
@@ -485,7 +528,13 @@ export default function ContentCalendar() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
+            <button
+              onClick={() => {
+                setEditingStory(null);
+                setShowAddStoryModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+            >
               <Plus size={18} />
               Add Story
             </button>
@@ -606,6 +655,20 @@ export default function ContentCalendar() {
         <StoryDetailModal
           story={selectedStory}
           onClose={() => setSelectedStory(null)}
+          onEdit={handleEditStory}
+          onDelete={handleDeleteStory}
+        />
+      )}
+
+      {/* Add/Edit Story Modal */}
+      {showAddStoryModal && (
+        <AddStoryModal
+          onClose={() => {
+            setShowAddStoryModal(false);
+            setEditingStory(null);
+          }}
+          onSave={handleSaveStory}
+          editStory={editingStory}
         />
       )}
 
