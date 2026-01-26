@@ -26,6 +26,8 @@ const STORAGE_KEYS = {
   blockedDates: 'editorial-blocked-dates',
   hiddenEvents: 'editorial-hidden-events',
   eventOverrides: 'editorial-event-overrides',
+  customStories: 'editorial-custom-stories',
+  customOOO: 'editorial-custom-ooo',
 };
 
 // Custom quarter definitions
@@ -101,6 +103,21 @@ export default function ContentCalendar() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
 
+  // Modal states for adding new items
+  const [showAddStoryModal, setShowAddStoryModal] = useState(false);
+  const [showAddOOOModal, setShowAddOOOModal] = useState(false);
+  const [showBlockDateModal, setShowBlockDateModal] = useState(false);
+
+  // Persistent state for custom stories
+  const [customStories, setCustomStories] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.customStories, [])
+  );
+
+  // Persistent state for custom OOO
+  const [customOOO, setCustomOOO] = useState(() =>
+    loadFromStorage(STORAGE_KEYS.customOOO, [])
+  );
+
   // Persistent state for custom blocked dates
   const [customBlockedDates, setCustomBlockedDates] = useState(() =>
     loadFromStorage(STORAGE_KEYS.blockedDates, [])
@@ -117,6 +134,14 @@ export default function ContentCalendar() {
   );
 
   // Save to localStorage whenever state changes
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.customStories, customStories);
+  }, [customStories]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.customOOO, customOOO);
+  }, [customOOO]);
+
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.blockedDates, customBlockedDates);
   }, [customBlockedDates]);
@@ -142,12 +167,33 @@ export default function ContentCalendar() {
       });
     });
 
+    // Add custom stories
+    customStories.forEach((story) => {
+      if (!hiddenEvents.includes(story.id)) {
+        events.push({
+          ...story,
+          date: story.publishDate,
+          displayType: 'story',
+        });
+      }
+    });
+
     // Add OOO
     sampleOOO.forEach((ooo) => {
       events.push({
         ...ooo,
         displayType: 'ooo',
       });
+    });
+
+    // Add custom OOO
+    customOOO.forEach((ooo) => {
+      if (!hiddenEvents.includes(ooo.id)) {
+        events.push({
+          ...ooo,
+          displayType: 'ooo',
+        });
+      }
     });
 
     // Add blocked dates from data file
@@ -186,7 +232,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [customStories, customOOO, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -345,6 +391,249 @@ export default function ContentCalendar() {
       return newOverrides;
     });
     setHiddenEvents(prev => prev.filter(id => id !== eventId));
+  };
+
+  // Add a new story
+  const handleAddStory = (storyData) => {
+    const newStory = {
+      id: `custom-story-${Date.now()}`,
+      ...storyData,
+    };
+    setCustomStories(prev => [...prev, newStory]);
+    setShowAddStoryModal(false);
+  };
+
+  // Add a new OOO
+  const handleAddOOO = (oooData) => {
+    const newOOO = {
+      id: `custom-ooo-${Date.now()}`,
+      ...oooData,
+      type: 'ooo',
+    };
+    setCustomOOO(prev => [...prev, newOOO]);
+    setShowAddOOOModal(false);
+  };
+
+  // Add a new blocked date
+  const handleAddBlockedDate = (blockedData) => {
+    const newBlocked = {
+      id: `custom-blocked-${Date.now()}`,
+      ...blockedData,
+      type: blockedData.type || 'blocked',
+    };
+    setCustomBlockedDates(prev => [...prev, newBlocked]);
+    setShowBlockDateModal(false);
+  };
+
+  // Export calendar to CSV
+  const handleExportCSV = () => {
+    const { start, end } = getDateRange();
+    const eventsInRange = allEvents.filter(event => {
+      const eventDate = parseISO(event.date);
+      return eventDate >= start && eventDate <= end;
+    });
+
+    const csvContent = [
+      ['Title', 'Date', 'End Date', 'Type', 'Category'].join(','),
+      ...eventsInRange.map(event => [
+        `"${event.title?.replace(/"/g, '""') || ''}"`,
+        event.date,
+        event.endDate || '',
+        event.displayType || event.type || '',
+        event.category || ''
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `calendar-export-${format(currentDate, 'yyyy-MM')}.csv`;
+    link.click();
+  };
+
+  // Add Story Modal
+  const AddStoryModal = () => {
+    const [title, setTitle] = useState('');
+    const [publishDate, setPublishDate] = useState(format(currentDate, 'yyyy-MM-dd'));
+
+    if (!showAddStoryModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddStoryModal(false)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">Add Story</h3>
+            <button onClick={() => setShowAddStoryModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Story Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                placeholder="Enter story title"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Publish Date</label>
+              <input
+                type="date"
+                value={publishDate}
+                onChange={e => setPublishDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+            <button
+              onClick={() => handleAddStory({ title, publishDate })}
+              disabled={!title.trim()}
+              className="w-full px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Add Story
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Add OOO Modal
+  const AddOOOModal = () => {
+    const [title, setTitle] = useState('');
+    const [date, setDate] = useState(format(currentDate, 'yyyy-MM-dd'));
+    const [endDate, setEndDate] = useState('');
+
+    if (!showAddOOOModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddOOOModal(false)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">Add OOO</h3>
+            <button onClick={() => setShowAddOOOModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name / Description</label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+                placeholder="e.g., John - Vacation"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Date (optional)</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+            <button
+              onClick={() => handleAddOOO({ title, date, endDate: endDate || undefined })}
+              disabled={!title.trim()}
+              className="w-full px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Add OOO
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Block Date Modal
+  const BlockDateModal = () => {
+    const [title, setTitle] = useState('');
+    const [date, setDate] = useState(format(currentDate, 'yyyy-MM-dd'));
+    const [endDate, setEndDate] = useState('');
+    const [type, setType] = useState('blocked');
+
+    if (!showBlockDateModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowBlockDateModal(false)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">Block Date</h3>
+            <button onClick={() => setShowBlockDateModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+                placeholder="e.g., Company event"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select
+                value={type}
+                onChange={e => setType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+              >
+                <option value="blocked">Blocked Date</option>
+                <option value="highTraffic">High Traffic Day</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Date (optional)</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+            <button
+              onClick={() => handleAddBlockedDate({ title, date, endDate: endDate || undefined, type })}
+              disabled={!title.trim()}
+              className="w-full px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Block Date
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderEvent = (event) => {
@@ -527,19 +816,31 @@ export default function ContentCalendar() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors">
+            <button
+              onClick={() => setShowAddStoryModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+            >
               <Plus size={18} />
               Add Story
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors">
+            <button
+              onClick={() => setShowAddOOOModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
+            >
               <Calendar size={18} />
               Add OOO
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-ls-orange text-ls-orange rounded-lg hover:bg-ls-orange-light transition-colors">
+            <button
+              onClick={() => setShowBlockDateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-ls-orange text-ls-orange rounded-lg hover:bg-ls-orange-light transition-colors"
+            >
               <Ban size={18} />
               Block Date
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
               <Download size={18} />
               Export CSV
             </button>
@@ -684,6 +985,15 @@ export default function ContentCalendar() {
 
       {/* Event Edit Modal */}
       <EventEditModal />
+
+      {/* Add Story Modal */}
+      <AddStoryModal />
+
+      {/* Add OOO Modal */}
+      <AddOOOModal />
+
+      {/* Block Date Modal */}
+      <BlockDateModal />
     </div>
   );
 }
