@@ -4,6 +4,7 @@ import ContentCalendar from './components/ContentCalendar';
 import RunningTotals from './components/RunningTotals';
 import StoryArchive from './components/StoryArchive';
 import StoryIdeation from './components/StoryIdeation';
+import StoryPitchAnalysis from './components/StoryPitchAnalysis';
 import CompetitorLog from './components/CompetitorLog';
 
 function App() {
@@ -19,6 +20,8 @@ function App() {
         return <StoryArchive />;
       case 'story-ideation':
         return <StoryIdeation />;
+      case 'story-pitch-analysis':
+        return <StoryPitchAnalysis />;
       case 'competitor-log':
         return <CompetitorLog />;
       default:
