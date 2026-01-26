@@ -80,7 +80,7 @@ export const authenticateWithGoogle = (clientId) => {
 
 // Fetch data from Google Sheets
 export const fetchSheetData = async (accessToken) => {
-  const range = `${SHEET_NAME}!A:H`;
+  const range = `${SHEET_NAME}!A:L`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`;
 
   const response = await fetch(url, {

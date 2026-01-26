@@ -283,11 +283,15 @@ export default function StoryPitchAnalysis() {
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Brand</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Study Title</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Study URL</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Link #</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Avg O/R</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Avg C/R</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">News Peg</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Study Link #</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">National O/R</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">National C/R</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">National Sends</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Avg O/R Local</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Avg C/R Local</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Local Sends</th>
                   <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Prev. Link #</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Date Pitched</th>
                 </tr>
               </thead>
               <tbody>
@@ -318,16 +322,28 @@ export default function StoryPitchAnalysis() {
                       {row.study_link_ || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.average_o_r || '-'}
+                      {row.national_o_r || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.average_c_r || '-'}
+                      {row.national_c_r || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b max-w-xs truncate" title={row.news_peg}>
-                      {row.news_peg || '-'}
+                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                      {row.national_sends || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                      {row.average_o_r_local || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                      {row.average_c_r_local || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                      {row.local_sends || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
                       {row.prev__link_ || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                      {row.date_pitched || '-'}
                     </td>
                   </tr>
                 ))}
