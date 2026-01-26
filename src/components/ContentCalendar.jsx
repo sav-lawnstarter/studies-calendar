@@ -597,49 +597,80 @@ export default function ContentCalendar() {
 
         {/* Calendar Body */}
         <div className="flex-1">
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="grid grid-cols-7 border-b">
-              {week.map((day) => {
-                const dayEvents = getEventsForDay(day);
-                const isToday = isSameDay(day, new Date());
-                const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+          {weeks.map((week, weekIndex) => {
+            // For Quarter view, check if we need to show a month header
+            // Show month header if this week contains the 1st of a month (or first week of quarter)
+            let monthHeader = null;
+            if (viewMode === 'Quarter') {
+              const firstDayOfWeek = week[0];
+              const lastDayOfWeek = week[6];
 
-                return (
-                  <div
-                    key={day.toISOString()}
-                    className={`
-                      min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
-                      ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
-                    `}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className={`
-                          text-sm font-medium
-                          ${isToday
-                            ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
-                            : isCurrentMonth
-                              ? 'text-gray-900'
-                              : 'text-gray-400'
-                          }
-                        `}
-                      >
-                        {format(day, 'd')}
-                      </span>
-                    </div>
-                    <div className="space-y-1 overflow-y-auto max-h-[90px]">
-                      {dayEvents.slice(0, 4).map(renderEvent)}
-                      {dayEvents.length > 4 && (
-                        <div className="text-xs text-gray-500 px-2">
-                          +{dayEvents.length - 4} more
-                        </div>
-                      )}
-                    </div>
+              // Check if any day in this week is the 1st of a month
+              const firstOfMonthInWeek = week.find(day => day.getDate() === 1);
+
+              // Show header for first week of quarter or when a new month starts
+              if (weekIndex === 0 || firstOfMonthInWeek) {
+                // Use the first of month if found, otherwise use the dominant month in the week
+                const monthToShow = firstOfMonthInWeek ||
+                  (week.filter(d => d.getMonth() === lastDayOfWeek.getMonth()).length >= 4 ? lastDayOfWeek : firstDayOfWeek);
+
+                monthHeader = (
+                  <div className="bg-gray-100 border-b px-4 py-2">
+                    <span className="text-sm font-semibold text-gray-700">
+                      {format(monthToShow, 'MMMM yyyy')}
+                    </span>
                   </div>
                 );
-              })}
-            </div>
-          ))}
+              }
+            }
+
+            return (
+              <React.Fragment key={weekIndex}>
+                {monthHeader}
+                <div className="grid grid-cols-7 border-b">
+                  {week.map((day) => {
+                    const dayEvents = getEventsForDay(day);
+                    const isToday = isSameDay(day, new Date());
+                    const isCurrentMonth = viewMode === 'Month' ? isSameMonth(day, currentDate) : true;
+
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        className={`
+                          min-h-[120px] border-r last:border-r-0 p-2 calendar-cell
+                          ${!isCurrentMonth ? 'bg-gray-50' : 'bg-white'}
+                        `}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={`
+                              text-sm font-medium
+                              ${isToday
+                                ? 'bg-ls-green text-white w-7 h-7 rounded-full flex items-center justify-center'
+                                : isCurrentMonth
+                                  ? 'text-gray-900'
+                                  : 'text-gray-400'
+                              }
+                            `}
+                          >
+                            {format(day, 'd')}
+                          </span>
+                        </div>
+                        <div className="space-y-1 overflow-y-auto max-h-[90px]">
+                          {dayEvents.slice(0, 4).map(renderEvent)}
+                          {dayEvents.length > 4 && (
+                            <div className="text-xs text-gray-500 px-2">
+                              +{dayEvents.length - 4} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
