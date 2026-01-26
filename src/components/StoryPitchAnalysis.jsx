@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2 } from 'lucide-react';
+import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X } from 'lucide-react';
 import {
   loadGoogleScript,
   getStoredToken,
@@ -15,6 +15,7 @@ export default function StoryPitchAnalysis() {
   const [error, setError] = useState(null);
   const [data, setData] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [selectedStory, setSelectedStory] = useState(null);
 
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -303,8 +304,14 @@ export default function StoryPitchAnalysis() {
                     <td className="px-4 py-3 text-sm text-gray-900 border-b">
                       {row.brand || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b max-w-xs truncate" title={row.study_title}>
-                      {row.study_title || '-'}
+                    <td className="px-4 py-3 text-sm border-b max-w-xs">
+                      <button
+                        onClick={() => setSelectedStory(row)}
+                        className="text-ls-green hover:underline text-left truncate block w-full"
+                        title={row.study_title}
+                      >
+                        {row.study_title || '-'}
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-sm border-b">
                       {row.study_url ? (
@@ -352,6 +359,98 @@ export default function StoryPitchAnalysis() {
           </div>
         )}
       </div>
+
+      {/* Story Detail Modal */}
+      {selectedStory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedStory(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
+              <h3 className="text-lg font-semibold text-gray-900">Study Details</h3>
+              <button onClick={() => setSelectedStory(null)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Brand</label>
+                  <p className="text-gray-900">{selectedStory.brand || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Date Pitched</label>
+                  <p className="text-gray-900">{selectedStory.date_pitched || '-'}</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Study Title</label>
+                <p className="text-gray-900 font-medium">{selectedStory.study_title || '-'}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Study URL</label>
+                {selectedStory.study_url ? (
+                  <a
+                    href={selectedStory.study_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-ls-green hover:underline inline-flex items-center gap-1"
+                  >
+                    {selectedStory.study_url} <ExternalLink size={14} />
+                  </a>
+                ) : <p className="text-gray-900">-</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Study Link #</label>
+                  <p className="text-gray-900">{selectedStory.study_link_ || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Prev. Link #</label>
+                  <p className="text-gray-900">{selectedStory.prev__link_ || '-'}</p>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">National Metrics</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">National O/R</label>
+                    <p className="text-gray-900">{selectedStory.national_o_r || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">National C/R</label>
+                    <p className="text-gray-900">{selectedStory.national_c_r || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">National Sends</label>
+                    <p className="text-gray-900">{selectedStory.national_sends || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Local Metrics</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Avg O/R Local</label>
+                    <p className="text-gray-900">{selectedStory.average_o_r_local || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Avg C/R Local</label>
+                    <p className="text-gray-900">{selectedStory.average_c_r_local || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Local Sends</label>
+                    <p className="text-gray-900">{selectedStory.local_sends || '-'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
