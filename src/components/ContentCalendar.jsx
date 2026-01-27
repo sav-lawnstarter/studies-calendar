@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   format,
   startOfMonth,
@@ -15,9 +15,10 @@ import {
   isWithinInterval,
   parseISO,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
+import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
 
 const viewModes = ['Week', 'Month', 'Quarter'];
 
@@ -133,6 +134,12 @@ export default function ContentCalendar() {
     loadFromStorage(STORAGE_KEYS.eventOverrides, {})
   );
 
+  // Content Calendar Planning sheet data (approved stories - shown in green)
+  const [contentCalendarData, setContentCalendarData] = useState([]);
+  const [isLoadingContentCalendar, setIsLoadingContentCalendar] = useState(false);
+  const [contentCalendarError, setContentCalendarError] = useState(null);
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
   // Save to localStorage whenever state changes
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.customStories, customStories);
@@ -154,26 +161,81 @@ export default function ContentCalendar() {
     saveToStorage(STORAGE_KEYS.eventOverrides, eventOverrides);
   }, [eventOverrides]);
 
+  // Fetch Content Calendar Planning sheet data
+  const fetchContentCalendar = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) {
+      // Try to authenticate if no token
+      if (clientId) {
+        try {
+          await loadGoogleScript();
+          const newToken = await authenticateWithGoogle(clientId);
+          setIsLoadingContentCalendar(true);
+          const data = await fetchContentCalendarData(newToken);
+          setContentCalendarData(data);
+          setContentCalendarError(null);
+        } catch (err) {
+          console.error('Auth error:', err);
+          setContentCalendarError('Please sign in via Story & Pitch Analysis to load Content Calendar data.');
+        } finally {
+          setIsLoadingContentCalendar(false);
+        }
+      }
+      return;
+    }
+
+    setIsLoadingContentCalendar(true);
+    setContentCalendarError(null);
+    try {
+      const data = await fetchContentCalendarData(token);
+      setContentCalendarData(data);
+    } catch (err) {
+      console.error('Content Calendar fetch error:', err);
+      setContentCalendarError(err.message);
+    } finally {
+      setIsLoadingContentCalendar(false);
+    }
+  }, [clientId]);
+
+  // Load Content Calendar data on mount
+  useEffect(() => {
+    fetchContentCalendar();
+  }, [fetchContentCalendar]);
+
   // Combine all events
   const allEvents = useMemo(() => {
     const events = [];
 
-    // Add stories (shown on publish date)
-    sampleStories.forEach((story) => {
-      events.push({
-        ...story,
-        date: story.publishDate,
-        displayType: 'story',
-      });
+    // Add approved stories from Content Calendar Planning sheet (GREEN)
+    contentCalendarData.forEach((story) => {
+      if (story.pitch_date && !hiddenEvents.includes(story.id)) {
+        events.push({
+          id: story.id,
+          title: story.news_peg || story.brand || 'Approved Story',
+          date: story.pitch_date,
+          displayType: 'approvedStory',
+          brand: story.brand,
+          newsPeg: story.news_peg,
+          analysisDueBy: story.analysis_due_by,
+          editsDueBy: story.edits_due_by,
+          qaDueBy: story.qa_due_by,
+          productionDate: story.production_date,
+          expertsContacted: story._experts_contacted,
+          notes: story.notes,
+          urls: story.urls,
+          status: story.status,
+          studyUrl: story.study_url,
+        });
+      }
     });
 
-    // Add custom stories
+    // Add story ideation entries (YELLOW) - custom stories added via Add Story button
     customStories.forEach((story) => {
       if (!hiddenEvents.includes(story.id)) {
         events.push({
           ...story,
-          date: story.publishDate,
-          displayType: 'story',
+          date: story.pitchDate, // Use pitchDate instead of publishDate
+          displayType: 'storyIdeation',
         });
       }
     });
@@ -232,7 +294,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [customStories, customOOO, customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [contentCalendarData, customStories, customOOO, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -328,6 +390,10 @@ export default function ContentCalendar() {
   // Event styling based on type
   const getEventStyle = (displayType) => {
     switch (displayType) {
+      case 'approvedStory':
+        return 'bg-ls-green text-white hover:bg-ls-green-light cursor-pointer';
+      case 'storyIdeation':
+        return 'bg-yellow-400 text-yellow-900 hover:bg-yellow-300 cursor-pointer';
       case 'story':
         return 'bg-ls-green text-white hover:bg-ls-green-light cursor-pointer';
       case 'ooo':
@@ -345,8 +411,12 @@ export default function ContentCalendar() {
 
   const handleEventClick = (event, e) => {
     e.stopPropagation();
-    if (event.displayType === 'story') {
-      // Find the full story data
+    if (event.displayType === 'approvedStory' || event.displayType === 'storyIdeation') {
+      // Show story/ideation details
+      setSelectedEvent(event);
+      setShowEventModal(true);
+    } else if (event.displayType === 'story') {
+      // Find the full story data (legacy)
       const fullStory = sampleStories.find((s) => s.id === event.id);
       setSelectedStory(fullStory);
     } else if (['blocked', 'highTraffic', 'holiday'].includes(event.displayType)) {
@@ -393,11 +463,12 @@ export default function ContentCalendar() {
     setHiddenEvents(prev => prev.filter(id => id !== eventId));
   };
 
-  // Add a new story
+  // Add a new story ideation entry
   const handleAddStory = (storyData) => {
     const newStory = {
-      id: `custom-story-${Date.now()}`,
+      id: `story-ideation-${Date.now()}`,
       ...storyData,
+      type: 'storyIdeation',
     };
     setCustomStories(prev => [...prev, newStory]);
     setShowAddStoryModal(false);
@@ -451,50 +522,106 @@ export default function ContentCalendar() {
     link.click();
   };
 
-  // Add Story Modal
+  // Add Story Ideation Modal
   const AddStoryModal = () => {
     const [title, setTitle] = useState('');
-    const [publishDate, setPublishDate] = useState(format(currentDate, 'yyyy-MM-dd'));
+    const [description, setDescription] = useState('');
+    const [potentialMetrics, setPotentialMetrics] = useState('');
+    const [newsPeg, setNewsPeg] = useState('');
+    const [pitchDate, setPitchDate] = useState(format(currentDate, 'yyyy-MM-dd'));
 
     if (!showAddStoryModal) return null;
 
+    const handleSubmit = () => {
+      handleAddStory({
+        title,
+        description,
+        potentialMetrics,
+        newsPeg,
+        pitchDate,
+      });
+      // Reset form
+      setTitle('');
+      setDescription('');
+      setPotentialMetrics('');
+      setNewsPeg('');
+      setPitchDate(format(currentDate, 'yyyy-MM-dd'));
+    };
+
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddStoryModal(false)}>
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between p-4 border-b">
-            <h3 className="text-lg font-semibold text-gray-900">Add Story</h3>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Add Story Ideation</h3>
+              <p className="text-xs text-gray-500">Story ideas are shown in yellow on the calendar</p>
+            </div>
             <button onClick={() => setShowAddStoryModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
               <X size={20} className="text-gray-500" />
             </button>
           </div>
           <div className="p-4 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Story Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Story Idea / Title <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
-                placeholder="Enter story title"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+                placeholder="Enter story idea or working title"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Publish Date</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Brief Description</label>
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+                placeholder="Describe the story concept..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Potential Metrics / Data Sources</label>
+              <textarea
+                value={potentialMetrics}
+                onChange={e => setPotentialMetrics(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+                placeholder="What data or metrics could support this story?"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">News Peg</label>
+              <input
+                type="text"
+                value={newsPeg}
+                onChange={e => setNewsPeg(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+                placeholder="What makes this timely? (holiday, event, trend...)"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Pitch Date <span className="text-red-500">*</span>
+              </label>
               <input
                 type="date"
-                value={publishDate}
-                onChange={e => setPublishDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                value={pitchDate}
+                onChange={e => setPitchDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
               />
             </div>
           </div>
-          <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+          <div className="p-4 border-t bg-yellow-50 rounded-b-xl">
             <button
-              onClick={() => handleAddStory({ title, publishDate })}
-              disabled={!title.trim()}
-              className="w-full px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleSubmit}
+              disabled={!title.trim() || !pitchDate}
+              className="w-full px-4 py-2 bg-yellow-400 text-yellow-900 font-medium rounded-lg hover:bg-yellow-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add Story
+              Add Story Ideation
             </button>
           </div>
         </div>
@@ -638,7 +765,7 @@ export default function ContentCalendar() {
 
   const renderEvent = (event) => {
     const style = getEventStyle(event.displayType);
-    const isClickable = ['story', 'blocked', 'highTraffic', 'holiday'].includes(event.displayType);
+    const isClickable = ['approvedStory', 'storyIdeation', 'story', 'blocked', 'highTraffic', 'holiday'].includes(event.displayType);
 
     return (
       <div
@@ -649,7 +776,7 @@ export default function ContentCalendar() {
           ${style}
           ${isClickable ? 'cursor-pointer hover:opacity-90' : ''}
         `}
-        title={`${event.title}${isClickable && event.displayType !== 'story' ? ' (click to edit)' : ''}`}
+        title={`${event.title}${event.displayType === 'storyIdeation' ? ' (Story Ideation)' : event.displayType === 'approvedStory' ? ' (Approved)' : ''}`}
       >
         {event.title}
       </div>
@@ -660,10 +787,159 @@ export default function ContentCalendar() {
   const EventEditModal = () => {
     if (!showEventModal || !selectedEvent) return null;
 
-    const isCustomEvent = selectedEvent.id?.startsWith('custom-');
+    const isStoryIdeation = selectedEvent.displayType === 'storyIdeation';
+    const isApprovedStory = selectedEvent.displayType === 'approvedStory';
+    const isCustomEvent = selectedEvent.id?.startsWith('custom-') || selectedEvent.id?.startsWith('story-ideation-');
     const hasOverride = eventOverrides[selectedEvent.id];
     const canToggle = ['blocked', 'highTraffic'].includes(selectedEvent.displayType);
 
+    // Story Ideation or Approved Story Modal
+    if (isStoryIdeation || isApprovedStory) {
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEventModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className={`flex items-center justify-between p-4 border-b ${isApprovedStory ? 'bg-ls-green/5' : 'bg-yellow-50'}`}>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {isApprovedStory ? 'Approved Story' : 'Story Ideation'}
+                </h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${isApprovedStory ? 'bg-ls-green text-white' : 'bg-yellow-400 text-yellow-900'}`}>
+                  {isApprovedStory ? 'From Content Calendar Sheet' : 'Under Consideration'}
+                </span>
+              </div>
+              <button onClick={() => setShowEventModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title / News Peg</label>
+                <p className="text-gray-900 font-medium">{selectedEvent.title || selectedEvent.newsPeg || '-'}</p>
+              </div>
+
+              {selectedEvent.brand && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                  <p className="text-gray-900">{selectedEvent.brand}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pitch Date</label>
+                <p className="text-gray-900">
+                  {selectedEvent.date ? format(parseISO(selectedEvent.date), 'MMMM d, yyyy') : '-'}
+                </p>
+              </div>
+
+              {/* Story Ideation specific fields */}
+              {isStoryIdeation && (
+                <>
+                  {selectedEvent.description && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <p className="text-gray-600">{selectedEvent.description}</p>
+                    </div>
+                  )}
+                  {selectedEvent.potentialMetrics && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Potential Metrics / Data Sources</label>
+                      <p className="text-gray-600">{selectedEvent.potentialMetrics}</p>
+                    </div>
+                  )}
+                  {selectedEvent.newsPeg && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">News Peg</label>
+                      <p className="text-gray-600">{selectedEvent.newsPeg}</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Approved Story specific fields */}
+              {isApprovedStory && (
+                <>
+                  {selectedEvent.analysisDueBy && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Analysis Due By</label>
+                      <p className="text-gray-900">{selectedEvent.analysisDueBy}</p>
+                    </div>
+                  )}
+                  {selectedEvent.editsDueBy && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Edits Due By</label>
+                      <p className="text-gray-900">{selectedEvent.editsDueBy}</p>
+                    </div>
+                  )}
+                  {selectedEvent.qaDueBy && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">QA Due By</label>
+                      <p className="text-gray-900">{selectedEvent.qaDueBy}</p>
+                    </div>
+                  )}
+                  {selectedEvent.productionDate && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Production Date</label>
+                      <p className="text-gray-900">{selectedEvent.productionDate}</p>
+                    </div>
+                  )}
+                  {selectedEvent.status && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <p className="text-gray-900">{selectedEvent.status}</p>
+                    </div>
+                  )}
+                  {selectedEvent.notes && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                      <p className="text-gray-600">{selectedEvent.notes}</p>
+                    </div>
+                  )}
+                  {selectedEvent.studyUrl && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Study URL</label>
+                      <a href={selectedEvent.studyUrl} target="_blank" rel="noopener noreferrer" className="text-ls-green hover:underline">
+                        {selectedEvent.studyUrl}
+                      </a>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className={`p-4 border-t rounded-b-xl ${isApprovedStory ? 'bg-gray-50' : 'bg-yellow-50'}`}>
+              {isStoryIdeation && isCustomEvent && (
+                <button
+                  onClick={() => {
+                    handleDeleteEvent(selectedEvent.id);
+                    // Also remove from customStories
+                    setCustomStories(prev => prev.filter(s => s.id !== selectedEvent.id));
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  <Trash2 size={18} />
+                  Delete Story Ideation
+                </button>
+              )}
+              {isApprovedStory && (
+                <button
+                  onClick={() => handleDeleteEvent(selectedEvent.id)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <EyeOff size={18} />
+                  Hide from Calendar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Default Event Edit Modal (blocked, highTraffic, holiday)
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEventModal(false)}>
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
@@ -855,31 +1131,41 @@ export default function ContentCalendar() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-ls-green"></div>
-              <span className="text-sm text-gray-600">Stories</span>
+              <span className="text-sm text-gray-600">Approved Stories</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-yellow-400"></div>
+              <span className="text-sm text-gray-600">Story Ideation</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-ls-orange"></div>
-              <span className="text-sm text-gray-600">Team OOO</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded bg-ls-orange-light border border-ls-orange"></div>
-              <span className="text-sm text-gray-600">Blocked Dates</span>
+              <span className="text-sm text-gray-600">Team OOO / Blocked</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-ls-blue"></div>
               <span className="text-sm text-gray-600">High Traffic Days</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded bg-gray-200 border border-gray-300"></div>
-              <span className="text-sm text-gray-600">Holidays</span>
-            </div>
           </div>
         </div>
-        {hiddenCount > 0 && (
-          <div className="text-sm text-gray-500">
-            {hiddenCount} event{hiddenCount !== 1 ? 's' : ''} hidden
-          </div>
-        )}
+        <div className="flex items-center gap-4">
+          {isLoadingContentCalendar && (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <RefreshCw size={14} className="animate-spin" />
+              Loading calendar...
+            </div>
+          )}
+          {contentCalendarError && (
+            <div className="flex items-center gap-2 text-sm text-amber-600">
+              <AlertCircle size={14} />
+              {contentCalendarError.includes('sign in') ? 'Sign in for approved stories' : 'Sheet error'}
+            </div>
+          )}
+          {hiddenCount > 0 && (
+            <div className="text-sm text-gray-500">
+              {hiddenCount} event{hiddenCount !== 1 ? 's' : ''} hidden
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Calendar Grid */}
