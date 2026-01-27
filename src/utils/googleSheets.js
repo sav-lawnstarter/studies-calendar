@@ -4,8 +4,14 @@ const SCOPES = [
   'https://www.googleapis.com/auth/webmasters.readonly', // Search Console
   'https://www.googleapis.com/auth/analytics.readonly', // Google Analytics
 ].join(' ');
-const SPREADSHEET_ID = '1L8jwOxU_9lLetVOyuNmdov9p56b4ypbIFCjfjJAiZt8';
-const SHEET_NAME = 'Study Story Data';
+
+// Study Story Data sheet (for Story & Pitch Analysis)
+const STUDY_SPREADSHEET_ID = '1L8jwOxU_9lLetVOyuNmdov9p56b4ypbIFCjfjJAiZt8';
+const STUDY_SHEET_NAME = 'Study Story Data';
+
+// Content Calendar Planning sheet (for approved stories on calendar)
+const CONTENT_CALENDAR_SPREADSHEET_ID = '1ELXVk6Zu9U3ISiv7zQM0rf9GCi_v2OrRzNat9cKGw7M';
+const CONTENT_CALENDAR_SHEET_NAME = 'Content Calendar';
 
 // Storage key for tokens
 const TOKEN_STORAGE_KEY = 'google-sheets-token';
@@ -82,10 +88,10 @@ export const authenticateWithGoogle = (clientId) => {
   });
 };
 
-// Fetch data from Google Sheets
+// Fetch data from Study Story Data sheet (for Story & Pitch Analysis)
 export const fetchSheetData = async (accessToken) => {
-  const range = `${SHEET_NAME}!A:L`;
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`;
+  const range = `${STUDY_SHEET_NAME}!A:L`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${STUDY_SPREADSHEET_ID}/values/${encodeURIComponent(range)}`;
 
   const response = await fetch(url, {
     headers: {
@@ -103,6 +109,48 @@ export const fetchSheetData = async (accessToken) => {
 
   const data = await response.json();
   return parseSheetData(data.values);
+};
+
+// Fetch data from Content Calendar Planning sheet (for approved stories on calendar)
+export const fetchContentCalendarData = async (accessToken) => {
+  const range = `${CONTENT_CALENDAR_SHEET_NAME}!A:L`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONTENT_CALENDAR_SPREADSHEET_ID}/values/${encodeURIComponent(range)}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      throw new Error('Token expired. Please re-authenticate.');
+    }
+    throw new Error(`Failed to fetch Content Calendar data: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return parseContentCalendarData(data.values);
+};
+
+// Parse Content Calendar data into structured objects
+const parseContentCalendarData = (values) => {
+  if (!values || values.length < 2) {
+    return [];
+  }
+
+  const headers = values[0];
+  const rows = values.slice(1);
+
+  return rows.map((row, index) => {
+    const item = { id: `content-calendar-${index}` };
+    headers.forEach((header, colIndex) => {
+      const key = header.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+      item[key] = row[colIndex] || '';
+    });
+    return item;
+  });
 };
 
 // Parse sheet data into structured objects
