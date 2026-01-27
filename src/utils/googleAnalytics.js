@@ -1,5 +1,60 @@
 // Google Search Console and Analytics API utility
 
+// Brand-specific property configuration from environment variables
+export const BRAND_PROPERTIES = {
+  'LawnStarter': {
+    gscProperty: import.meta.env.VITE_LAWNSTARTER_GSC_PROPERTY || '',
+    ga4Property: import.meta.env.VITE_LAWNSTARTER_GA4_PROPERTY || '',
+  },
+  'Lawn Love': {
+    gscProperty: import.meta.env.VITE_LAWNLOVE_GSC_PROPERTY || '',
+    ga4Property: import.meta.env.VITE_LAWNLOVE_GA4_PROPERTY || '',
+  },
+  'Home Gnome': {
+    gscProperty: import.meta.env.VITE_HOMEGNOME_GSC_PROPERTY || '',
+    ga4Property: import.meta.env.VITE_HOMEGNOME_GA4_PROPERTY || '',
+  },
+};
+
+// Get properties for a specific brand
+export const getPropertiesForBrand = (brand) => {
+  if (!brand) return { gscProperty: '', ga4Property: '' };
+
+  // Try exact match first
+  if (BRAND_PROPERTIES[brand]) {
+    return BRAND_PROPERTIES[brand];
+  }
+
+  // Try case-insensitive match
+  const normalizedBrand = brand.toLowerCase().trim();
+  for (const [key, value] of Object.entries(BRAND_PROPERTIES)) {
+    if (key.toLowerCase() === normalizedBrand) {
+      return value;
+    }
+  }
+
+  // Try partial match (e.g., "lawnstarter" matches "LawnStarter")
+  for (const [key, value] of Object.entries(BRAND_PROPERTIES)) {
+    if (normalizedBrand.includes(key.toLowerCase().replace(/\s/g, '')) ||
+        key.toLowerCase().replace(/\s/g, '').includes(normalizedBrand.replace(/\s/g, ''))) {
+      return value;
+    }
+  }
+
+  return { gscProperty: '', ga4Property: '' };
+};
+
+// Get all configured brands with their connection status
+export const getConfiguredBrands = () => {
+  return Object.entries(BRAND_PROPERTIES).map(([brand, props]) => ({
+    brand,
+    gscProperty: props.gscProperty,
+    ga4Property: props.ga4Property,
+    gscConnected: !!props.gscProperty,
+    ga4Connected: !!props.ga4Property,
+  }));
+};
+
 // Fetch Google Search Console metrics for a specific URL
 export const fetchSearchConsoleMetrics = async (accessToken, siteUrl, pageUrl, startDate, endDate) => {
   // Format the site URL for the API (must be the property URL)

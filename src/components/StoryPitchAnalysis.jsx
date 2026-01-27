@@ -10,9 +10,8 @@ import {
 import {
   fetchSearchConsoleWithComparison,
   fetchGA4MetricsForUrl,
-  fetchSearchConsoleSites,
-  fetchGA4Properties,
-  extractDomain,
+  getPropertiesForBrand,
+  getConfiguredBrands,
   formatEngagementTime,
   formatNumber,
   formatPercent,
@@ -30,13 +29,9 @@ export default function StoryPitchAnalysis() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [selectedStory, setSelectedStory] = useState(null);
 
-  // Analytics state
+  // Analytics state - now uses brand-based property configuration
   const [showAnalyticsConfig, setShowAnalyticsConfig] = useState(false);
-  const [gscSites, setGscSites] = useState([]);
-  const [ga4Properties, setGa4Properties] = useState([]);
-  const [selectedGscSite, setSelectedGscSite] = useState(localStorage.getItem('selected-gsc-site') || '');
-  const [selectedGa4Property, setSelectedGa4Property] = useState(localStorage.getItem('selected-ga4-property') || '');
-  const [isLoadingAnalyticsConfig, setIsLoadingAnalyticsConfig] = useState(false);
+  const configuredBrands = getConfiguredBrands();
 
   // Per-story analytics metrics
   const [storyMetrics, setStoryMetrics] = useState(null);
@@ -109,46 +104,7 @@ export default function StoryPitchAnalysis() {
     setLastRefresh(null);
   };
 
-  // Load available GSC sites and GA4 properties
-  const loadAnalyticsConfig = useCallback(async () => {
-    const token = getStoredToken();
-    if (!token) return;
-
-    setIsLoadingAnalyticsConfig(true);
-    try {
-      const [sites, properties] = await Promise.all([
-        fetchSearchConsoleSites(token).catch(() => []),
-        fetchGA4Properties(token).catch(() => []),
-      ]);
-      setGscSites(sites);
-      setGa4Properties(properties);
-
-      // Auto-select first if none selected
-      if (!selectedGscSite && sites.length > 0) {
-        const firstSite = sites[0].siteUrl;
-        setSelectedGscSite(firstSite);
-        localStorage.setItem('selected-gsc-site', firstSite);
-      }
-      if (!selectedGa4Property && properties.length > 0) {
-        const firstProperty = properties[0].propertyId;
-        setSelectedGa4Property(firstProperty);
-        localStorage.setItem('selected-ga4-property', firstProperty);
-      }
-    } catch (err) {
-      console.error('Error loading analytics config:', err);
-    } finally {
-      setIsLoadingAnalyticsConfig(false);
-    }
-  }, [selectedGscSite, selectedGa4Property]);
-
-  // Load analytics config when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadAnalyticsConfig();
-    }
-  }, [isAuthenticated, loadAnalyticsConfig]);
-
-  // Fetch metrics for selected story
+  // Fetch metrics for selected story using brand-based property selection
   const fetchStoryMetrics = useCallback(async (story) => {
     if (!story?.study_url) {
       setStoryMetrics(null);
@@ -158,25 +114,28 @@ export default function StoryPitchAnalysis() {
     const token = getStoredToken();
     if (!token) return;
 
+    // Get properties based on brand
+    const { gscProperty, ga4Property } = getPropertiesForBrand(story.brand);
+
     setIsLoadingStoryMetrics(true);
     setStoryMetricsError(null);
 
     try {
-      const results = { gsc: null, ga4: null };
+      const results = { gsc: null, ga4: null, brand: story.brand, gscProperty, ga4Property };
 
       // Fetch Search Console metrics
-      if (selectedGscSite) {
+      if (gscProperty) {
         try {
-          results.gsc = await fetchSearchConsoleWithComparison(token, selectedGscSite, story.study_url);
+          results.gsc = await fetchSearchConsoleWithComparison(token, gscProperty, story.study_url);
         } catch (err) {
           console.error('GSC fetch error:', err);
         }
       }
 
       // Fetch GA4 metrics
-      if (selectedGa4Property) {
+      if (ga4Property) {
         try {
-          results.ga4 = await fetchGA4MetricsForUrl(token, selectedGa4Property, story.study_url);
+          results.ga4 = await fetchGA4MetricsForUrl(token, ga4Property, story.study_url);
         } catch (err) {
           console.error('GA4 fetch error:', err);
         }
@@ -188,7 +147,7 @@ export default function StoryPitchAnalysis() {
     } finally {
       setIsLoadingStoryMetrics(false);
     }
-  }, [selectedGscSite, selectedGa4Property]);
+  }, []);
 
   // Fetch metrics when story is selected
   useEffect(() => {
@@ -199,18 +158,6 @@ export default function StoryPitchAnalysis() {
       setStoryMetricsError(null);
     }
   }, [selectedStory, fetchStoryMetrics]);
-
-  // Handle GSC site selection
-  const handleGscSiteChange = (siteUrl) => {
-    setSelectedGscSite(siteUrl);
-    localStorage.setItem('selected-gsc-site', siteUrl);
-  };
-
-  // Handle GA4 property selection
-  const handleGa4PropertyChange = (propertyId) => {
-    setSelectedGa4Property(propertyId);
-    localStorage.setItem('selected-ga4-property', propertyId);
-  };
 
   // Calculate metrics from data
   const calculateMetrics = useCallback(() => {
@@ -347,71 +294,39 @@ export default function StoryPitchAnalysis() {
       {/* Analytics Configuration Panel */}
       {showAnalyticsConfig && (
         <div className="px-6 py-4 bg-blue-50 border-b">
-          <div className="flex items-start gap-6">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Google Search Console Property
-              </label>
-              {isLoadingAnalyticsConfig ? (
-                <div className="flex items-center gap-2 text-gray-500">
-                  <RefreshCw size={16} className="animate-spin" />
-                  Loading properties...
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Connected Analytics Properties by Brand</h3>
+          <div className="grid grid-cols-3 gap-4">
+            {configuredBrands.map((brand) => (
+              <div key={brand.brand} className="bg-white rounded-lg p-4 border">
+                <h4 className="font-medium text-gray-900 mb-3">{brand.brand}</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${brand.gscConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                    <span className="text-gray-600">Search Console:</span>
+                    {brand.gscConnected ? (
+                      <span className="text-gray-900 truncate flex-1" title={brand.gscProperty}>
+                        {brand.gscProperty.replace('https://', '').replace('http://', '').replace('sc-domain:', '')}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 italic">Not configured</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${brand.ga4Connected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                    <span className="text-gray-600">GA4 Property:</span>
+                    {brand.ga4Connected ? (
+                      <span className="text-gray-900">{brand.ga4Property}</span>
+                    ) : (
+                      <span className="text-gray-400 italic">Not configured</span>
+                    )}
+                  </div>
                 </div>
-              ) : gscSites.length > 0 ? (
-                <select
-                  value={selectedGscSite}
-                  onChange={(e) => handleGscSiteChange(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-ls-green focus:border-ls-green"
-                >
-                  <option value="">Select a property...</option>
-                  {gscSites.map((site) => (
-                    <option key={site.siteUrl} value={site.siteUrl}>
-                      {site.siteUrl}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-sm text-gray-500">No Search Console properties found. Make sure you have access to properties in GSC.</p>
-              )}
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Google Analytics 4 Property
-              </label>
-              {isLoadingAnalyticsConfig ? (
-                <div className="flex items-center gap-2 text-gray-500">
-                  <RefreshCw size={16} className="animate-spin" />
-                  Loading properties...
-                </div>
-              ) : ga4Properties.length > 0 ? (
-                <select
-                  value={selectedGa4Property}
-                  onChange={(e) => handleGa4PropertyChange(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-ls-green focus:border-ls-green"
-                >
-                  <option value="">Select a property...</option>
-                  {ga4Properties.map((prop) => (
-                    <option key={prop.propertyId} value={prop.propertyId}>
-                      {prop.displayName} ({prop.accountName})
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-sm text-gray-500">No GA4 properties found. Make sure you have access to GA4 properties.</p>
-              )}
-            </div>
-            <button
-              onClick={loadAnalyticsConfig}
-              disabled={isLoadingAnalyticsConfig}
-              className="mt-6 flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-white transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={16} className={isLoadingAnalyticsConfig ? 'animate-spin' : ''} />
-              Refresh
-            </button>
+              </div>
+            ))}
           </div>
-          <p className="mt-3 text-xs text-gray-600">
-            Select the properties that match your study URLs to fetch Search Console and Analytics data.
-            Metrics are fetched for the last 28 days when viewing study details.
+          <p className="mt-4 text-xs text-gray-600">
+            Properties are configured via environment variables (VITE_[BRAND]_GSC_PROPERTY and VITE_[BRAND]_GA4_PROPERTY).
+            When viewing study details, metrics are automatically fetched from the correct property based on the study's brand.
           </p>
         </div>
       )}
@@ -661,14 +576,19 @@ export default function StoryPitchAnalysis() {
                 <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                   <BarChart3 size={16} className="text-ls-blue" />
                   Search Console Metrics (Last 28 Days)
+                  {storyMetrics?.gscProperty && (
+                    <span className="text-xs text-gray-400 font-normal">
+                      via {storyMetrics.gscProperty.replace('https://', '').replace('http://', '').replace('sc-domain:', '')}
+                    </span>
+                  )}
                 </h4>
                 {isLoadingStoryMetrics ? (
                   <div className="flex items-center gap-2 text-gray-500 py-4">
                     <RefreshCw size={16} className="animate-spin" />
                     Loading metrics...
                   </div>
-                ) : !selectedGscSite ? (
-                  <p className="text-sm text-gray-500 py-2">Configure a Search Console property in Analytics Config to view metrics.</p>
+                ) : !storyMetrics?.gscProperty ? (
+                  <p className="text-sm text-gray-500 py-2">No Search Console property configured for brand "{selectedStory.brand}". Set VITE_{selectedStory.brand?.toUpperCase().replace(/\s/g, '')}_GSC_PROPERTY.</p>
                 ) : storyMetrics?.gsc ? (
                   <>
                     <div className="grid grid-cols-4 gap-4">
@@ -738,14 +658,19 @@ export default function StoryPitchAnalysis() {
                 <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                   <Users size={16} className="text-ls-orange" />
                   Analytics Metrics (Last 28 Days)
+                  {storyMetrics?.ga4Property && (
+                    <span className="text-xs text-gray-400 font-normal">
+                      Property ID: {storyMetrics.ga4Property}
+                    </span>
+                  )}
                 </h4>
                 {isLoadingStoryMetrics ? (
                   <div className="flex items-center gap-2 text-gray-500 py-4">
                     <RefreshCw size={16} className="animate-spin" />
                     Loading metrics...
                   </div>
-                ) : !selectedGa4Property ? (
-                  <p className="text-sm text-gray-500 py-2">Configure a GA4 property in Analytics Config to view metrics.</p>
+                ) : !storyMetrics?.ga4Property ? (
+                  <p className="text-sm text-gray-500 py-2">No GA4 property configured for brand "{selectedStory.brand}". Set VITE_{selectedStory.brand?.toUpperCase().replace(/\s/g, '')}_GA4_PROPERTY.</p>
                 ) : storyMetrics?.ga4 ? (
                   <div className="grid grid-cols-4 gap-4">
                     <div className="bg-gray-50 rounded-lg p-3">
