@@ -134,6 +134,29 @@ export const fetchContentCalendarData = async (accessToken) => {
   return parseContentCalendarData(data.values);
 };
 
+// Convert date from MM/DD/YYYY to YYYY-MM-DD format
+const convertDateFormat = (dateStr) => {
+  if (!dateStr) return '';
+
+  // Check if it's already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+
+  // Handle MM/DD/YYYY format
+  const match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+    const [, month, day, year] = match;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  // Return original if no match (might be text or other format)
+  return dateStr;
+};
+
+// Fields that should be treated as dates
+const DATE_FIELDS = ['pitch_date', 'analysis_due_by', 'edits_due_by', 'qa_due_by', 'production_date'];
+
 // Parse Content Calendar data into structured objects
 const parseContentCalendarData = (values) => {
   if (!values || values.length < 2) {
@@ -147,7 +170,14 @@ const parseContentCalendarData = (values) => {
     const item = { id: `content-calendar-${index}` };
     headers.forEach((header, colIndex) => {
       const key = header.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
-      item[key] = row[colIndex] || '';
+      let value = row[colIndex] || '';
+
+      // Convert date fields to ISO format
+      if (DATE_FIELDS.includes(key) && value) {
+        value = convertDateFormat(value);
+      }
+
+      item[key] = value;
     });
     return item;
   });
