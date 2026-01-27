@@ -207,14 +207,16 @@ export default function ContentCalendar() {
     const events = [];
 
     // Add approved stories from Content Calendar Planning sheet (GREEN)
+    // Sheet columns: Brand, Story Title, Pitch Date, News Peg, Analysis Due By, Edits Due By, QA Due By, Production Date, # Experts Contacted, Notes, Status, Study URL
     contentCalendarData.forEach((story) => {
       if (story.pitch_date && !hiddenEvents.includes(story.id)) {
         events.push({
           id: story.id,
-          title: story.news_peg || story.brand || 'Approved Story',
+          title: story.story_title || story.news_peg || story.brand || 'Approved Story',
           date: story.pitch_date,
           displayType: 'approvedStory',
           brand: story.brand,
+          storyTitle: story.story_title,
           newsPeg: story.news_peg,
           analysisDueBy: story.analysis_due_by,
           editsDueBy: story.edits_due_by,
@@ -222,7 +224,6 @@ export default function ContentCalendar() {
           productionDate: story.production_date,
           expertsContacted: story._experts_contacted,
           notes: story.notes,
-          urls: story.urls,
           status: story.status,
           studyUrl: story.study_url,
         });
@@ -815,11 +816,6 @@ export default function ContentCalendar() {
 
             {/* Content */}
             <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title / News Peg</label>
-                <p className="text-gray-900 font-medium">{selectedEvent.title || selectedEvent.newsPeg || '-'}</p>
-              </div>
-
               {selectedEvent.brand && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
@@ -828,11 +824,23 @@ export default function ContentCalendar() {
               )}
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Story Title</label>
+                <p className="text-gray-900 font-medium">{selectedEvent.storyTitle || selectedEvent.title || '-'}</p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Pitch Date</label>
                 <p className="text-gray-900">
                   {selectedEvent.date ? format(parseISO(selectedEvent.date), 'MMMM d, yyyy') : '-'}
                 </p>
               </div>
+
+              {selectedEvent.newsPeg && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">News Peg</label>
+                  <p className="text-gray-600">{selectedEvent.newsPeg}</p>
+                </div>
+              )}
 
               {/* Story Ideation specific fields */}
               {isStoryIdeation && (
@@ -847,12 +855,6 @@ export default function ContentCalendar() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Potential Metrics / Data Sources</label>
                       <p className="text-gray-600">{selectedEvent.potentialMetrics}</p>
-                    </div>
-                  )}
-                  {selectedEvent.newsPeg && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">News Peg</label>
-                      <p className="text-gray-600">{selectedEvent.newsPeg}</p>
                     </div>
                   )}
                 </>
@@ -883,6 +885,12 @@ export default function ContentCalendar() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Production Date</label>
                       <p className="text-gray-900">{selectedEvent.productionDate}</p>
+                    </div>
+                  )}
+                  {selectedEvent.expertsContacted && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1"># Experts Contacted</label>
+                      <p className="text-gray-900">{selectedEvent.expertsContacted}</p>
                     </div>
                   )}
                   {selectedEvent.status && (
@@ -1092,6 +1100,15 @@ export default function ContentCalendar() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={fetchContentCalendar}
+              disabled={isLoadingContentCalendar}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              title="Refresh Content Calendar from Google Sheet"
+            >
+              <RefreshCw size={18} className={isLoadingContentCalendar ? 'animate-spin' : ''} />
+              Refresh
+            </button>
             <button
               onClick={() => setShowAddStoryModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
