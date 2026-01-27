@@ -1,5 +1,9 @@
 // Google Sheets API utility for client-side OAuth
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+const SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/webmasters.readonly', // Search Console
+  'https://www.googleapis.com/auth/analytics.readonly', // Google Analytics
+].join(' ');
 const SPREADSHEET_ID = '1L8jwOxU_9lLetVOyuNmdov9p56b4ypbIFCjfjJAiZt8';
 const SHEET_NAME = 'Study Story Data';
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X } from 'lucide-react';
+import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   loadGoogleScript,
   getStoredToken,
@@ -7,6 +7,19 @@ import {
   fetchSheetData,
   clearGoogleAuth,
 } from '../utils/googleSheets';
+import {
+  fetchSearchConsoleWithComparison,
+  fetchGA4MetricsForUrl,
+  fetchSearchConsoleSites,
+  fetchGA4Properties,
+  extractDomain,
+  formatEngagementTime,
+  formatNumber,
+  formatPercent,
+  formatPosition,
+  getChangeClass,
+  getChangeArrow,
+} from '../utils/googleAnalytics';
 
 export default function StoryPitchAnalysis() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -16,6 +29,19 @@ export default function StoryPitchAnalysis() {
   const [data, setData] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [selectedStory, setSelectedStory] = useState(null);
+
+  // Analytics state
+  const [showAnalyticsConfig, setShowAnalyticsConfig] = useState(false);
+  const [gscSites, setGscSites] = useState([]);
+  const [ga4Properties, setGa4Properties] = useState([]);
+  const [selectedGscSite, setSelectedGscSite] = useState(localStorage.getItem('selected-gsc-site') || '');
+  const [selectedGa4Property, setSelectedGa4Property] = useState(localStorage.getItem('selected-ga4-property') || '');
+  const [isLoadingAnalyticsConfig, setIsLoadingAnalyticsConfig] = useState(false);
+
+  // Per-story analytics metrics
+  const [storyMetrics, setStoryMetrics] = useState(null);
+  const [isLoadingStoryMetrics, setIsLoadingStoryMetrics] = useState(false);
+  const [storyMetricsError, setStoryMetricsError] = useState(null);
 
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -81,6 +107,109 @@ export default function StoryPitchAnalysis() {
     setIsAuthenticated(false);
     setData([]);
     setLastRefresh(null);
+  };
+
+  // Load available GSC sites and GA4 properties
+  const loadAnalyticsConfig = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) return;
+
+    setIsLoadingAnalyticsConfig(true);
+    try {
+      const [sites, properties] = await Promise.all([
+        fetchSearchConsoleSites(token).catch(() => []),
+        fetchGA4Properties(token).catch(() => []),
+      ]);
+      setGscSites(sites);
+      setGa4Properties(properties);
+
+      // Auto-select first if none selected
+      if (!selectedGscSite && sites.length > 0) {
+        const firstSite = sites[0].siteUrl;
+        setSelectedGscSite(firstSite);
+        localStorage.setItem('selected-gsc-site', firstSite);
+      }
+      if (!selectedGa4Property && properties.length > 0) {
+        const firstProperty = properties[0].propertyId;
+        setSelectedGa4Property(firstProperty);
+        localStorage.setItem('selected-ga4-property', firstProperty);
+      }
+    } catch (err) {
+      console.error('Error loading analytics config:', err);
+    } finally {
+      setIsLoadingAnalyticsConfig(false);
+    }
+  }, [selectedGscSite, selectedGa4Property]);
+
+  // Load analytics config when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadAnalyticsConfig();
+    }
+  }, [isAuthenticated, loadAnalyticsConfig]);
+
+  // Fetch metrics for selected story
+  const fetchStoryMetrics = useCallback(async (story) => {
+    if (!story?.study_url) {
+      setStoryMetrics(null);
+      return;
+    }
+
+    const token = getStoredToken();
+    if (!token) return;
+
+    setIsLoadingStoryMetrics(true);
+    setStoryMetricsError(null);
+
+    try {
+      const results = { gsc: null, ga4: null };
+
+      // Fetch Search Console metrics
+      if (selectedGscSite) {
+        try {
+          results.gsc = await fetchSearchConsoleWithComparison(token, selectedGscSite, story.study_url);
+        } catch (err) {
+          console.error('GSC fetch error:', err);
+        }
+      }
+
+      // Fetch GA4 metrics
+      if (selectedGa4Property) {
+        try {
+          results.ga4 = await fetchGA4MetricsForUrl(token, selectedGa4Property, story.study_url);
+        } catch (err) {
+          console.error('GA4 fetch error:', err);
+        }
+      }
+
+      setStoryMetrics(results);
+    } catch (err) {
+      setStoryMetricsError(err.message);
+    } finally {
+      setIsLoadingStoryMetrics(false);
+    }
+  }, [selectedGscSite, selectedGa4Property]);
+
+  // Fetch metrics when story is selected
+  useEffect(() => {
+    if (selectedStory) {
+      fetchStoryMetrics(selectedStory);
+    } else {
+      setStoryMetrics(null);
+      setStoryMetricsError(null);
+    }
+  }, [selectedStory, fetchStoryMetrics]);
+
+  // Handle GSC site selection
+  const handleGscSiteChange = (siteUrl) => {
+    setSelectedGscSite(siteUrl);
+    localStorage.setItem('selected-gsc-site', siteUrl);
+  };
+
+  // Handle GA4 property selection
+  const handleGa4PropertyChange = (propertyId) => {
+    setSelectedGa4Property(propertyId);
+    localStorage.setItem('selected-ga4-property', propertyId);
   };
 
   // Calculate metrics from data
@@ -190,6 +319,13 @@ export default function StoryPitchAnalysis() {
           </div>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setShowAnalyticsConfig(!showAnalyticsConfig)}
+              className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${showAnalyticsConfig ? 'bg-ls-green text-white border-ls-green' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+            >
+              <Settings size={18} />
+              Analytics Config
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={isLoading}
               className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors disabled:opacity-50"
@@ -207,6 +343,78 @@ export default function StoryPitchAnalysis() {
           </div>
         </div>
       </div>
+
+      {/* Analytics Configuration Panel */}
+      {showAnalyticsConfig && (
+        <div className="px-6 py-4 bg-blue-50 border-b">
+          <div className="flex items-start gap-6">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Google Search Console Property
+              </label>
+              {isLoadingAnalyticsConfig ? (
+                <div className="flex items-center gap-2 text-gray-500">
+                  <RefreshCw size={16} className="animate-spin" />
+                  Loading properties...
+                </div>
+              ) : gscSites.length > 0 ? (
+                <select
+                  value={selectedGscSite}
+                  onChange={(e) => handleGscSiteChange(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                >
+                  <option value="">Select a property...</option>
+                  {gscSites.map((site) => (
+                    <option key={site.siteUrl} value={site.siteUrl}>
+                      {site.siteUrl}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-500">No Search Console properties found. Make sure you have access to properties in GSC.</p>
+              )}
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Google Analytics 4 Property
+              </label>
+              {isLoadingAnalyticsConfig ? (
+                <div className="flex items-center gap-2 text-gray-500">
+                  <RefreshCw size={16} className="animate-spin" />
+                  Loading properties...
+                </div>
+              ) : ga4Properties.length > 0 ? (
+                <select
+                  value={selectedGa4Property}
+                  onChange={(e) => handleGa4PropertyChange(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-ls-green focus:border-ls-green"
+                >
+                  <option value="">Select a property...</option>
+                  {ga4Properties.map((prop) => (
+                    <option key={prop.propertyId} value={prop.propertyId}>
+                      {prop.displayName} ({prop.accountName})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-500">No GA4 properties found. Make sure you have access to GA4 properties.</p>
+              )}
+            </div>
+            <button
+              onClick={loadAnalyticsConfig}
+              disabled={isLoadingAnalyticsConfig}
+              className="mt-6 flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-white transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={isLoadingAnalyticsConfig ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-gray-600">
+            Select the properties that match your study URLs to fetch Search Console and Analytics data.
+            Metrics are fetched for the last 28 days when viewing study details.
+          </p>
+        </div>
+      )}
 
       {/* Metrics Cards */}
       <div className="px-6 py-4 bg-gray-50 border-b">
@@ -447,6 +655,141 @@ export default function StoryPitchAnalysis() {
                   </div>
                 </div>
               </div>
+
+              {/* Search Console Metrics */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <BarChart3 size={16} className="text-ls-blue" />
+                  Search Console Metrics (Last 28 Days)
+                </h4>
+                {isLoadingStoryMetrics ? (
+                  <div className="flex items-center gap-2 text-gray-500 py-4">
+                    <RefreshCw size={16} className="animate-spin" />
+                    Loading metrics...
+                  </div>
+                ) : !selectedGscSite ? (
+                  <p className="text-sm text-gray-500 py-2">Configure a Search Console property in Analytics Config to view metrics.</p>
+                ) : storyMetrics?.gsc ? (
+                  <>
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <MousePointerClick size={14} className="text-ls-green" />
+                          <label className="text-xs font-medium text-gray-500">Total Clicks</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.gsc.current.clicks)}</p>
+                        {storyMetrics.gsc.comparison.clicksChange !== null && (
+                          <p className={`text-xs ${getChangeClass(storyMetrics.gsc.comparison.clicksChange)}`}>
+                            {getChangeArrow(storyMetrics.gsc.comparison.clicksChange)}{storyMetrics.gsc.comparison.clicksChange}% vs last year
+                          </p>
+                        )}
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Eye size={14} className="text-ls-blue" />
+                          <label className="text-xs font-medium text-gray-500">Total Impressions</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.gsc.current.impressions)}</p>
+                        {storyMetrics.gsc.comparison.impressionsChange !== null && (
+                          <p className={`text-xs ${getChangeClass(storyMetrics.gsc.comparison.impressionsChange)}`}>
+                            {getChangeArrow(storyMetrics.gsc.comparison.impressionsChange)}{storyMetrics.gsc.comparison.impressionsChange}% vs last year
+                          </p>
+                        )}
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Target size={14} className="text-ls-orange" />
+                          <label className="text-xs font-medium text-gray-500">Avg CTR</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{formatPercent(storyMetrics.gsc.current.ctr)}</p>
+                        {storyMetrics.gsc.comparison.ctrChange !== null && (
+                          <p className={`text-xs ${getChangeClass(storyMetrics.gsc.comparison.ctrChange)}`}>
+                            {getChangeArrow(storyMetrics.gsc.comparison.ctrChange)}{storyMetrics.gsc.comparison.ctrChange}% vs last year
+                          </p>
+                        )}
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <TrendingUp size={14} className="text-purple-600" />
+                          <label className="text-xs font-medium text-gray-500">Avg Position</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{formatPosition(storyMetrics.gsc.current.position)}</p>
+                        {storyMetrics.gsc.comparison.positionChange !== null && (
+                          <p className={`text-xs ${getChangeClass(storyMetrics.gsc.comparison.positionChange, false)}`}>
+                            {parseFloat(storyMetrics.gsc.comparison.positionChange) > 0 ? '+' : ''}{storyMetrics.gsc.comparison.positionChange} positions vs last year
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-4 gap-4 text-xs text-gray-500">
+                      <div>Last Year: {formatNumber(storyMetrics.gsc.lastYear.clicks)}</div>
+                      <div>Last Year: {formatNumber(storyMetrics.gsc.lastYear.impressions)}</div>
+                      <div>Last Year: {formatPercent(storyMetrics.gsc.lastYear.ctr)}</div>
+                      <div>Last Year: {formatPosition(storyMetrics.gsc.lastYear.position)}</div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500 py-2">No Search Console data available for this URL.</p>
+                )}
+              </div>
+
+              {/* Google Analytics Metrics */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Users size={16} className="text-ls-orange" />
+                  Analytics Metrics (Last 28 Days)
+                </h4>
+                {isLoadingStoryMetrics ? (
+                  <div className="flex items-center gap-2 text-gray-500 py-4">
+                    <RefreshCw size={16} className="animate-spin" />
+                    Loading metrics...
+                  </div>
+                ) : !selectedGa4Property ? (
+                  <p className="text-sm text-gray-500 py-2">Configure a GA4 property in Analytics Config to view metrics.</p>
+                ) : storyMetrics?.ga4 ? (
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <ArrowDownToLine size={14} className="text-ls-green" />
+                        <label className="text-xs font-medium text-gray-500">Entrances</label>
+                      </div>
+                      <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.ga4.entrances)}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Users size={14} className="text-ls-blue" />
+                        <label className="text-xs font-medium text-gray-500">Engaged Sessions</label>
+                      </div>
+                      <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.ga4.engagedSessions)}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Clock size={14} className="text-ls-orange" />
+                        <label className="text-xs font-medium text-gray-500">Avg. Engagement Time</label>
+                      </div>
+                      <p className="text-lg font-semibold text-gray-900">{formatEngagementTime(storyMetrics.ga4.avgEngagementTime)}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <ChevronDown size={14} className="text-purple-600" />
+                        <label className="text-xs font-medium text-gray-500">Scroll Depth</label>
+                      </div>
+                      <p className="text-lg font-semibold text-gray-900">{storyMetrics.ga4.scrollDepth.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 py-2">No Analytics data available for this URL.</p>
+                )}
+              </div>
+
+              {storyMetricsError && (
+                <div className="border-t pt-4">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                    <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-red-700">{storyMetricsError}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
