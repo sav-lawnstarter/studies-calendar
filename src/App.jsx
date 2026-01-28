@@ -6,6 +6,7 @@ import StoryArchive from './components/StoryArchive';
 import StoryIdeation from './components/StoryIdeation';
 import StoryPitchAnalysis from './components/StoryPitchAnalysis';
 import CompetitorLog from './components/CompetitorLog';
+import DueThisWeek from './components/DueThisWeek';
 
 function App() {
   const [activeView, setActiveView] = useState('content-calendar');
@@ -14,6 +15,8 @@ function App() {
     switch (activeView) {
       case 'content-calendar':
         return <ContentCalendar />;
+      case 'due-this-week':
+        return <DueThisWeek />;
       case 'running-totals':
         return <RunningTotals />;
       case 'story-archive':

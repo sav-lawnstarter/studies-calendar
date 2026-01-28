@@ -4,6 +4,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/webmasters.readonly', // Search Console
   'https://www.googleapis.com/auth/analytics.readonly', // Google Analytics
   'https://www.googleapis.com/auth/calendar.readonly', // Google Calendar (for team OOO)
+  'https://www.googleapis.com/auth/drive.file', // Google Drive (for creating new drafts from templates)
 ].join(' ');
 
 // Study Story Data sheet (for Story & Pitch Analysis)

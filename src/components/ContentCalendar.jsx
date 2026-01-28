@@ -15,11 +15,21 @@ import {
   isWithinInterval,
   parseISO,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle, Bell, BellOff, FilePlus, ExternalLink, Loader2 } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
 import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
 import { fetchTeamOOOEvents, hasTeamCalendarsConfigured } from '../utils/googleCalendar';
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+  checkAndNotifyDeadlines,
+  cleanupNotifiedDeadlines,
+  getNotificationSettings,
+  saveNotificationSettings,
+} from '../utils/notifications';
+import { getTemplates, hasTemplatesConfigured, copyTemplate } from '../utils/googleDrive';
 
 const viewModes = ['Week', 'Month', 'Quarter'];
 
@@ -109,6 +119,10 @@ export default function ContentCalendar() {
   const [showAddStoryModal, setShowAddStoryModal] = useState(false);
   const [showAddOOOModal, setShowAddOOOModal] = useState(false);
   const [showBlockDateModal, setShowBlockDateModal] = useState(false);
+  const [showNewDraftModal, setShowNewDraftModal] = useState(false);
+  const [newDraftLoading, setNewDraftLoading] = useState(false);
+  const [newDraftResult, setNewDraftResult] = useState(null);
+  const [newDraftError, setNewDraftError] = useState(null);
 
   // Persistent state for custom stories
   const [customStories, setCustomStories] = useState(() =>
@@ -145,6 +159,10 @@ export default function ContentCalendar() {
   const [googleCalendarOOO, setGoogleCalendarOOO] = useState([]);
   const [isLoadingGoogleOOO, setIsLoadingGoogleOOO] = useState(false);
   const [googleOOOError, setGoogleOOOError] = useState(null);
+
+  // Notification state
+  const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
+  const [notificationSettings, setNotificationSettings] = useState(() => getNotificationSettings());
 
   // Save to localStorage whenever state changes
   useEffect(() => {
@@ -264,6 +282,11 @@ export default function ContentCalendar() {
     handleRefreshAll();
   }, [handleRefreshAll]);
 
+  // Cleanup old notification records on mount
+  useEffect(() => {
+    cleanupNotifiedDeadlines();
+  }, []);
+
   // Combine all events
   const allEvents = useMemo(() => {
     const events = [];
@@ -368,6 +391,38 @@ export default function ContentCalendar() {
 
     return events;
   }, [contentCalendarData, customStories, customOOO, googleCalendarOOO, customBlockedDates, hiddenEvents, eventOverrides]);
+
+  // Handle notification permission request
+  const handleEnableNotifications = async () => {
+    const permission = await requestNotificationPermission();
+    setNotificationPermission(permission);
+    if (permission === 'granted') {
+      // Immediately check for deadlines after enabling
+      checkAndNotifyDeadlines(allEvents);
+    }
+  };
+
+  // Toggle notifications on/off
+  const handleToggleNotifications = () => {
+    const newSettings = { ...notificationSettings, enabled: !notificationSettings.enabled };
+    setNotificationSettings(newSettings);
+    saveNotificationSettings(newSettings);
+  };
+
+  // Check deadlines when events change (and notifications are enabled)
+  useEffect(() => {
+    if (notificationPermission === 'granted' && notificationSettings.enabled && allEvents.length > 0) {
+      // Check deadlines immediately
+      checkAndNotifyDeadlines(allEvents);
+
+      // Also set up a periodic check every 30 minutes
+      const interval = setInterval(() => {
+        checkAndNotifyDeadlines(allEvents);
+      }, 30 * 60 * 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [allEvents, notificationPermission, notificationSettings.enabled]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -593,6 +648,185 @@ export default function ContentCalendar() {
     link.href = URL.createObjectURL(blob);
     link.download = `calendar-export-${format(currentDate, 'yyyy-MM')}.csv`;
     link.click();
+  };
+
+  // Create a new draft from a template
+  const handleCreateNewDraft = async (templateId, brand, draftName) => {
+    const token = getStoredToken();
+    if (!token) {
+      setNewDraftError('Please sign in first via Story & Pitch Analysis.');
+      return;
+    }
+
+    setNewDraftLoading(true);
+    setNewDraftError(null);
+    setNewDraftResult(null);
+
+    try {
+      const result = await copyTemplate(token, templateId, draftName);
+      setNewDraftResult({
+        ...result,
+        brand,
+      });
+    } catch (err) {
+      console.error('Error creating draft:', err);
+      setNewDraftError(err.message);
+    } finally {
+      setNewDraftLoading(false);
+    }
+  };
+
+  // New Draft Modal
+  const NewDraftModal = () => {
+    const [draftName, setDraftName] = useState(`Study Story Draft - ${format(new Date(), 'MMM d, yyyy')}`);
+    const [selectedTemplate, setSelectedTemplate] = useState(null);
+    const templates = getTemplates();
+
+    if (!showNewDraftModal) return null;
+
+    const handleClose = () => {
+      setShowNewDraftModal(false);
+      setNewDraftResult(null);
+      setNewDraftError(null);
+      setSelectedTemplate(null);
+      setDraftName(`Study Story Draft - ${format(new Date(), 'MMM d, yyyy')}`);
+    };
+
+    const handleCreate = () => {
+      if (selectedTemplate && draftName.trim()) {
+        handleCreateNewDraft(selectedTemplate.id, selectedTemplate.brand, draftName);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleClose}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">New Draft</h3>
+              <p className="text-xs text-gray-500">Create a new study story from a template</p>
+            </div>
+            <button onClick={handleClose} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="p-4 space-y-4">
+            {newDraftResult ? (
+              // Success state
+              <div className="text-center py-4">
+                <div className="w-16 h-16 bg-ls-green-lighter rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FilePlus size={32} className="text-ls-green" />
+                </div>
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">Draft Created!</h4>
+                <p className="text-sm text-gray-600 mb-4">{newDraftResult.name}</p>
+                <a
+                  href={newDraftResult.webViewLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+                >
+                  <ExternalLink size={18} />
+                  Open in Google Docs
+                </a>
+              </div>
+            ) : (
+              // Form state
+              <>
+                {templates.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-700 text-sm">
+                    <p className="font-medium mb-1">No templates configured</p>
+                    <p>Please set VITE_LAWNSTARTER_TEMPLATE_ID and/or VITE_LAWNLOVE_TEMPLATE_ID in your environment variables.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Template <span className="text-red-500">*</span>
+                      </label>
+                      <div className="space-y-2">
+                        {templates.map((template) => (
+                          <button
+                            key={template.id}
+                            onClick={() => setSelectedTemplate(template)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all ${
+                              selectedTemplate?.id === template.id
+                                ? 'border-ls-green bg-ls-green-lighter'
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div
+                              className="w-4 h-4 rounded-full"
+                              style={{ backgroundColor: template.color }}
+                            />
+                            <span className="font-medium text-gray-900">{template.brand} Template</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Draft Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={draftName}
+                        onChange={e => setDraftName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-green focus:border-transparent"
+                        placeholder="Enter draft name"
+                      />
+                    </div>
+
+                    {newDraftError && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                        {newDraftError}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          {!newDraftResult && templates.length > 0 && (
+            <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+              <button
+                onClick={handleCreate}
+                disabled={!selectedTemplate || !draftName.trim() || newDraftLoading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {newDraftLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <FilePlus size={18} />
+                    Create Draft
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {newDraftResult && (
+            <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+              <button
+                onClick={handleClose}
+                className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   // Add Story Ideation Modal
@@ -1207,6 +1441,16 @@ export default function ContentCalendar() {
               <Plus size={18} />
               Add Story
             </button>
+            {hasTemplatesConfigured() && (
+              <button
+                onClick={() => setShowNewDraftModal(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-ls-green text-ls-green rounded-lg hover:bg-ls-green-lighter transition-colors"
+                title="Create a new study story draft from a template"
+              >
+                <FilePlus size={18} />
+                New Draft
+              </button>
+            )}
             <button
               onClick={() => setShowAddOOOModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
@@ -1228,6 +1472,31 @@ export default function ContentCalendar() {
               <Download size={18} />
               Export CSV
             </button>
+            {/* Notification Toggle */}
+            {isNotificationSupported() && (
+              notificationPermission === 'granted' ? (
+                <button
+                  onClick={handleToggleNotifications}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                    notificationSettings.enabled
+                      ? 'bg-ls-blue text-white hover:bg-blue-600'
+                      : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title={notificationSettings.enabled ? 'Notifications enabled - click to disable' : 'Notifications disabled - click to enable'}
+                >
+                  {notificationSettings.enabled ? <Bell size={18} /> : <BellOff size={18} />}
+                </button>
+              ) : notificationPermission !== 'denied' && (
+                <button
+                  onClick={handleEnableNotifications}
+                  className="flex items-center gap-2 px-4 py-2 border border-ls-blue text-ls-blue rounded-lg hover:bg-ls-blue-light transition-colors"
+                  title="Enable deadline notifications"
+                >
+                  <Bell size={18} />
+                  Enable Alerts
+                </button>
+              )
+            )}
           </div>
         </div>
       </div>
@@ -1290,11 +1559,11 @@ export default function ContentCalendar() {
       {/* Calendar Grid */}
       <div className="flex-1 overflow-auto">
         {/* Day Headers */}
-        <div className="grid grid-cols-7 bg-gray-50 border-b sticky top-0">
+        <div className="grid grid-cols-7 bg-[#0AB463] border-b sticky top-0 z-10">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
             <div
               key={day}
-              className="px-2 py-3 text-center text-sm font-medium text-gray-600 border-r last:border-r-0"
+              className="px-2 py-3 text-center text-sm font-semibold text-white border-r border-white/20 last:border-r-0"
             >
               {day}
             </div>
@@ -1321,8 +1590,8 @@ export default function ContentCalendar() {
                   (week.filter(d => d.getMonth() === lastDayOfWeek.getMonth()).length >= 4 ? lastDayOfWeek : firstDayOfWeek);
 
                 monthHeader = (
-                  <div className="bg-gray-100 border-b px-4 py-2">
-                    <span className="text-sm font-semibold text-gray-700">
+                  <div className="bg-[#0AB463] border-b px-4 py-2">
+                    <span className="text-sm font-semibold text-white">
                       {format(monthToShow, 'MMMM yyyy')}
                     </span>
                   </div>
@@ -1399,6 +1668,9 @@ export default function ContentCalendar() {
 
       {/* Block Date Modal */}
       <BlockDateModal />
+
+      {/* New Draft Modal */}
+      <NewDraftModal />
     </div>
   );
 }
