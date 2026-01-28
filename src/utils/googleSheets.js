@@ -3,6 +3,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets.readonly',
   'https://www.googleapis.com/auth/webmasters.readonly', // Search Console
   'https://www.googleapis.com/auth/analytics.readonly', // Google Analytics
+  'https://www.googleapis.com/auth/calendar.readonly', // Google Calendar (for team OOO)
 ].join(' ');
 
 // Study Story Data sheet (for Story & Pitch Analysis)

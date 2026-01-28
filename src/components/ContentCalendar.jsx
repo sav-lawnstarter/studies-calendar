@@ -19,6 +19,7 @@ import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, Re
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
 import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
+import { fetchTeamOOOEvents, hasTeamCalendarsConfigured } from '../utils/googleCalendar';
 
 const viewModes = ['Week', 'Month', 'Quarter'];
 
@@ -140,6 +141,11 @@ export default function ContentCalendar() {
   const [contentCalendarError, setContentCalendarError] = useState(null);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
+  // Google Calendar OOO data (team OOO - shown in orange)
+  const [googleCalendarOOO, setGoogleCalendarOOO] = useState([]);
+  const [isLoadingGoogleOOO, setIsLoadingGoogleOOO] = useState(false);
+  const [googleOOOError, setGoogleOOOError] = useState(null);
+
   // Save to localStorage whenever state changes
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.customStories, customStories);
@@ -197,10 +203,61 @@ export default function ContentCalendar() {
     }
   }, [clientId]);
 
-  // Load Content Calendar data on mount
-  useEffect(() => {
+  // Fetch Google Calendar OOO events
+  const fetchGoogleOOO = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) {
+      // No token, can't fetch
+      return;
+    }
+
+    if (!hasTeamCalendarsConfigured()) {
+      // No calendars configured
+      return;
+    }
+
+    setIsLoadingGoogleOOO(true);
+    setGoogleOOOError(null);
+
+    try {
+      // Calculate date range based on current view
+      // Fetch a wide range to cover quarter view (6 months around current date)
+      const timeMin = new Date();
+      timeMin.setMonth(timeMin.getMonth() - 3);
+      const timeMax = new Date();
+      timeMax.setMonth(timeMax.getMonth() + 6);
+
+      const result = await fetchTeamOOOEvents(token, timeMin, timeMax);
+
+      if (result.events) {
+        setGoogleCalendarOOO(result.events);
+      }
+
+      if (result.error) {
+        console.warn('Some calendars had errors:', result.error);
+        // Only show error if no events were fetched at all
+        if (result.events.length === 0) {
+          setGoogleOOOError('Unable to load team OOO dates. Check calendar permissions.');
+        }
+      }
+    } catch (err) {
+      console.error('Google Calendar OOO fetch error:', err);
+      setGoogleOOOError('Unable to load team OOO dates. Check calendar permissions.');
+    } finally {
+      setIsLoadingGoogleOOO(false);
+    }
+  }, []);
+
+  // Combined refresh function for both Content Calendar and Google OOO
+  const handleRefreshAll = useCallback(() => {
     fetchContentCalendar();
-  }, [fetchContentCalendar]);
+    fetchGoogleOOO();
+  }, [fetchContentCalendar, fetchGoogleOOO]);
+
+  // Load Content Calendar data and OOO on mount
+  useEffect(() => {
+    handleRefreshAll();
+  }, [handleRefreshAll]);
 
   // Combine all events
   const allEvents = useMemo(() => {
@@ -259,6 +316,16 @@ export default function ContentCalendar() {
       }
     });
 
+    // Add Google Calendar OOO events (from team calendars)
+    googleCalendarOOO.forEach((ooo) => {
+      if (!hiddenEvents.includes(ooo.id)) {
+        events.push({
+          ...ooo,
+          displayType: 'ooo',
+        });
+      }
+    });
+
     // Add blocked dates from data file
     sampleBlockedDates.forEach((blocked) => {
       if (!hiddenEvents.includes(blocked.id)) {
@@ -295,7 +362,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [contentCalendarData, customStories, customOOO, customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [contentCalendarData, customStories, customOOO, googleCalendarOOO, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Get events for a specific day
   const getEventsForDay = (day) => {
@@ -1120,12 +1187,12 @@ export default function ContentCalendar() {
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-2">
             <button
-              onClick={fetchContentCalendar}
-              disabled={isLoadingContentCalendar}
+              onClick={handleRefreshAll}
+              disabled={isLoadingContentCalendar || isLoadingGoogleOOO}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-              title="Refresh Content Calendar from Google Sheet"
+              title="Refresh Content Calendar and Team OOO"
             >
-              <RefreshCw size={18} className={isLoadingContentCalendar ? 'animate-spin' : ''} />
+              <RefreshCw size={18} className={isLoadingContentCalendar || isLoadingGoogleOOO ? 'animate-spin' : ''} />
               Refresh
             </button>
             <button
@@ -1186,21 +1253,25 @@ export default function ContentCalendar() {
         <div className="flex items-center gap-4">
           {/* Debug info - shows data loading status */}
           <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
-            Sheet: {contentCalendarData.length} rows loaded
-            {contentCalendarData.length > 0 && contentCalendarData[0].pitch_date &&
-              ` | First pitch_date: ${contentCalendarData[0].pitch_date}`
-            }
+            Sheet: {contentCalendarData.length} rows | OOO: {googleCalendarOOO.length} events
           </div>
-          {isLoadingContentCalendar && (
+          {(isLoadingContentCalendar || isLoadingGoogleOOO) && (
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <RefreshCw size={14} className="animate-spin" />
-              Loading calendar...
+              {isLoadingContentCalendar && isLoadingGoogleOOO ? 'Loading...' :
+               isLoadingContentCalendar ? 'Loading calendar...' : 'Loading OOO...'}
             </div>
           )}
           {contentCalendarError && (
             <div className="flex items-center gap-2 text-sm text-amber-600">
               <AlertCircle size={14} />
               {contentCalendarError.includes('sign in') ? 'Sign in for approved stories' : 'Sheet error'}
+            </div>
+          )}
+          {googleOOOError && (
+            <div className="flex items-center gap-2 text-sm text-amber-600">
+              <AlertCircle size={14} />
+              {googleOOOError}
             </div>
           )}
           {hiddenCount > 0 && (
