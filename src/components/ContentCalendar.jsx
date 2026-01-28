@@ -1441,16 +1441,6 @@ export default function ContentCalendar() {
               <Plus size={18} />
               Add Story
             </button>
-            {hasTemplatesConfigured() && (
-              <button
-                onClick={() => setShowNewDraftModal(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-ls-green text-ls-green rounded-lg hover:bg-ls-green-lighter transition-colors"
-                title="Create a new study story draft from a template"
-              >
-                <FilePlus size={18} />
-                New Draft
-              </button>
-            )}
             <button
               onClick={() => setShowAddOOOModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
@@ -1465,38 +1455,6 @@ export default function ContentCalendar() {
               <Ban size={18} />
               Block Date
             </button>
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <Download size={18} />
-              Export CSV
-            </button>
-            {/* Notification Toggle */}
-            {isNotificationSupported() && (
-              notificationPermission === 'granted' ? (
-                <button
-                  onClick={handleToggleNotifications}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                    notificationSettings.enabled
-                      ? 'bg-ls-blue text-white hover:bg-blue-600'
-                      : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
-                  title={notificationSettings.enabled ? 'Notifications enabled - click to disable' : 'Notifications disabled - click to enable'}
-                >
-                  {notificationSettings.enabled ? <Bell size={18} /> : <BellOff size={18} />}
-                </button>
-              ) : notificationPermission !== 'denied' && (
-                <button
-                  onClick={handleEnableNotifications}
-                  className="flex items-center gap-2 px-4 py-2 border border-ls-blue text-ls-blue rounded-lg hover:bg-ls-blue-light transition-colors"
-                  title="Enable deadline notifications"
-                >
-                  <Bell size={18} />
-                  Enable Alerts
-                </button>
-              )
-            )}
           </div>
         </div>
       </div>
@@ -1647,6 +1605,53 @@ export default function ContentCalendar() {
             );
           })}
         </div>
+      </div>
+
+      {/* Footer Actions */}
+      <div className="bg-white border-t px-6 py-3 flex items-center justify-end gap-3">
+        {hasTemplatesConfigured() && (
+          <button
+            onClick={() => setShowNewDraftModal(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-ls-green text-ls-green rounded-lg hover:bg-ls-green-lighter transition-colors"
+            title="Create a new study story draft from a template"
+          >
+            <FilePlus size={18} />
+            New Draft
+          </button>
+        )}
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          <Download size={18} />
+          Export CSV
+        </button>
+        {/* Notification Toggle */}
+        {isNotificationSupported() && (
+          notificationPermission === 'granted' ? (
+            <button
+              onClick={handleToggleNotifications}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                notificationSettings.enabled
+                  ? 'bg-ls-blue text-white hover:bg-blue-600'
+                  : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+              title={notificationSettings.enabled ? 'Notifications enabled - click to disable' : 'Notifications disabled - click to enable'}
+            >
+              {notificationSettings.enabled ? <Bell size={18} /> : <BellOff size={18} />}
+              {notificationSettings.enabled ? 'Alerts On' : 'Alerts Off'}
+            </button>
+          ) : notificationPermission !== 'denied' && (
+            <button
+              onClick={handleEnableNotifications}
+              className="flex items-center gap-2 px-4 py-2 border border-ls-blue text-ls-blue rounded-lg hover:bg-ls-blue-light transition-colors"
+              title="Enable deadline notifications"
+            >
+              <Bell size={18} />
+              Enable Alerts
+            </button>
+          )
+        )}
       </div>
 
       {/* Story Detail Modal */}
