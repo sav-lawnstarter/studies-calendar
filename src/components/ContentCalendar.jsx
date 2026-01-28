@@ -1165,6 +1165,13 @@ export default function ContentCalendar() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {/* Debug info - shows data loading status */}
+          <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
+            Sheet: {contentCalendarData.length} rows loaded
+            {contentCalendarData.length > 0 && contentCalendarData[0].pitch_date &&
+              ` | First pitch_date: ${contentCalendarData[0].pitch_date}`
+            }
+          </div>
           {isLoadingContentCalendar && (
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <RefreshCw size={14} className="animate-spin" />
