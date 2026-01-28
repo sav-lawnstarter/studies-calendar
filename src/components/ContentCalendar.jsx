@@ -207,12 +207,15 @@ export default function ContentCalendar() {
   const fetchGoogleOOO = useCallback(async () => {
     const token = getStoredToken();
     if (!token) {
-      // No token, can't fetch
+      // No token, can't fetch - user needs to sign in
+      console.log('Google Calendar OOO: No token available');
       return;
     }
 
     if (!hasTeamCalendarsConfigured()) {
-      // No calendars configured
+      // No calendars configured - show warning
+      console.log('Google Calendar OOO: No team calendars configured (VITE_TEAM_CALENDAR_IDS not set)');
+      setGoogleOOOError('Team calendars not configured. Set VITE_TEAM_CALENDAR_IDS.');
       return;
     }
 
@@ -227,7 +230,9 @@ export default function ContentCalendar() {
       const timeMax = new Date();
       timeMax.setMonth(timeMax.getMonth() + 6);
 
+      console.log('Google Calendar OOO: Fetching events from', timeMin, 'to', timeMax);
       const result = await fetchTeamOOOEvents(token, timeMin, timeMax);
+      console.log('Google Calendar OOO: Result', result);
 
       if (result.events) {
         setGoogleCalendarOOO(result.events);
