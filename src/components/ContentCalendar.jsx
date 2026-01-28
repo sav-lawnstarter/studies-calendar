@@ -819,7 +819,18 @@ export default function ContentCalendar() {
               {selectedEvent.brand && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-                  <p className="text-gray-900">{selectedEvent.brand}</p>
+                  <span
+                    className="inline-block px-3 py-1 rounded-full text-white text-sm font-medium"
+                    style={{
+                      backgroundColor: selectedEvent.brand?.toLowerCase().includes('lawn love')
+                        ? '#246227'
+                        : selectedEvent.brand?.toLowerCase().includes('lawnstarter')
+                          ? '#069C55'
+                          : '#6b7280'
+                    }}
+                  >
+                    {selectedEvent.brand}
+                  </span>
                 </div>
               )}
 
@@ -896,7 +907,15 @@ export default function ContentCalendar() {
                   {selectedEvent.status && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                      <p className="text-gray-900">{selectedEvent.status}</p>
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                          selectedEvent.status?.toLowerCase() === 'pitched'
+                            ? 'bg-green-500 text-white'
+                            : 'bg-yellow-400 text-yellow-900'
+                        }`}
+                      >
+                        {selectedEvent.status}
+                      </span>
                     </div>
                   )}
                   {selectedEvent.notes && (
