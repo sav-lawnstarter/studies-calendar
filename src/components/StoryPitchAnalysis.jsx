@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp, FileText, Download, MessageSquare, Award } from 'lucide-react';
+import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp, FileText, Download, MessageSquare, Award, ArrowUpDown } from 'lucide-react';
 import {
   loadGoogleScript,
   getStoredToken,
@@ -63,6 +63,10 @@ export default function StoryPitchAnalysis() {
 
   // Report modal state
   const [showReportModal, setShowReportModal] = useState(false);
+
+  // Sorting state
+  const [sortColumn, setSortColumn] = useState('rank');
+  const [sortDirection, setSortDirection] = useState('asc');
 
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -316,6 +320,126 @@ export default function StoryPitchAnalysis() {
     }
     return indicators;
   }, []);
+
+  // Handle column sort
+  const handleSort = useCallback((column) => {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      // Default sort direction based on column type
+      const numericColumns = ['rank', 'links2025', 'links2024', 'links2023', 'links2022', 'links2021', 'linkCount', 'avgDA', 'avgPosition', 'impressionsChange'];
+      setSortDirection(numericColumns.includes(column) ? 'asc' : 'asc');
+    }
+  }, [sortColumn]);
+
+  // Sorted data based on current sort column and direction
+  const sortedData = useMemo(() => {
+    if (!rankedData.length) return [];
+
+    return [...rankedData].sort((a, b) => {
+      let aVal, bVal;
+
+      switch (sortColumn) {
+        case 'rank':
+          aVal = a.rank;
+          bVal = b.rank;
+          break;
+        case 'brand':
+          aVal = (a.brand || '').toLowerCase();
+          bVal = (b.brand || '').toLowerCase();
+          break;
+        case 'study_title':
+          aVal = (a.study_title || '').toLowerCase();
+          bVal = (b.study_title || '').toLowerCase();
+          break;
+        case 'links2025':
+          aVal = a.links2025 || 0;
+          bVal = b.links2025 || 0;
+          break;
+        case 'links2024':
+          aVal = a.links2024 || 0;
+          bVal = b.links2024 || 0;
+          break;
+        case 'links2023':
+          aVal = a.links2023 || 0;
+          bVal = b.links2023 || 0;
+          break;
+        case 'links2022':
+          aVal = a.links2022 || 0;
+          bVal = b.links2022 || 0;
+          break;
+        case 'links2021':
+          aVal = a.links2021 || 0;
+          bVal = b.links2021 || 0;
+          break;
+        case 'linkCount':
+          aVal = a.linkCount || 0;
+          bVal = b.linkCount || 0;
+          break;
+        case 'avgDA':
+          aVal = a.avgDA || 0;
+          bVal = b.avgDA || 0;
+          break;
+        case 'national_o_r':
+          aVal = parseFloat((a.national_o_r || '0').replace('%', '')) || 0;
+          bVal = parseFloat((b.national_o_r || '0').replace('%', '')) || 0;
+          break;
+        case 'national_c_r':
+          aVal = parseFloat((a.national_c_r || '0').replace('%', '')) || 0;
+          bVal = parseFloat((b.national_c_r || '0').replace('%', '')) || 0;
+          break;
+        case 'date_pitched':
+          aVal = new Date(a.date_pitched || a.pitch_date || '1970-01-01').getTime();
+          bVal = new Date(b.date_pitched || b.pitch_date || '1970-01-01').getTime();
+          break;
+        case 'avgPosition':
+          aVal = metricsCache[a.id]?.avgPosition ?? Infinity;
+          bVal = metricsCache[b.id]?.avgPosition ?? Infinity;
+          break;
+        case 'impressionsChange':
+          aVal = metricsCache[a.id]?.impressionsChange ?? -Infinity;
+          bVal = metricsCache[b.id]?.impressionsChange ?? -Infinity;
+          break;
+        default:
+          aVal = a.rank;
+          bVal = b.rank;
+      }
+
+      // Handle string comparison
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+
+      // Handle numeric comparison
+      if (sortDirection === 'asc') {
+        return aVal - bVal;
+      } else {
+        return bVal - aVal;
+      }
+    });
+  }, [rankedData, sortColumn, sortDirection, metricsCache]);
+
+  // Sortable header component
+  const SortableHeader = ({ column, label, className = '' }) => (
+    <th
+      className={`px-3 py-3 text-sm font-semibold text-gray-700 border-b cursor-pointer hover:bg-gray-100 select-none ${className}`}
+      onClick={() => handleSort(column)}
+    >
+      <div className="flex items-center justify-center gap-1">
+        <span dangerouslySetInnerHTML={{ __html: label.replace('\n', '<br/>') }} />
+        {sortColumn === column ? (
+          sortDirection === 'asc' ? (
+            <ChevronUp size={14} className="text-ls-green" />
+          ) : (
+            <ChevronDown size={14} className="text-ls-green" />
+          )
+        ) : (
+          <ArrowUpDown size={14} className="text-gray-400" />
+        )}
+      </div>
+    </th>
+  );
 
   // Generate report content
   const generateReport = useCallback(() => {
@@ -724,25 +848,26 @@ export default function StoryPitchAnalysis() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b w-16">Rank</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Brand</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Study Title</th>
+                  <SortableHeader column="rank" label="Rank" className="w-16" />
+                  <SortableHeader column="brand" label="Brand" className="text-left" />
+                  <SortableHeader column="study_title" label="Study Title" className="text-left" />
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b w-20">URL</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">2025<br/>Link #</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">2024<br/>Link #</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">2023<br/>Link #</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">2022<br/>Link #</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">2021<br/>Link #</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">Avg DA</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">National O/R</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">National C/R</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">Date Pitched</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b" title="Click story to load">Avg Position</th>
-                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b" title="Click story to load">Impr. % YoY</th>
+                  <SortableHeader column="linkCount" label="Study<br/>Link #" />
+                  <SortableHeader column="links2025" label="2025<br/>Link #" />
+                  <SortableHeader column="links2024" label="2024<br/>Link #" />
+                  <SortableHeader column="links2023" label="2023<br/>Link #" />
+                  <SortableHeader column="links2022" label="2022<br/>Link #" />
+                  <SortableHeader column="links2021" label="2021<br/>Link #" />
+                  <SortableHeader column="avgDA" label="Avg DA" />
+                  <SortableHeader column="national_o_r" label="National<br/>O/R" />
+                  <SortableHeader column="national_c_r" label="National<br/>C/R" />
+                  <SortableHeader column="date_pitched" label="Date<br/>Pitched" />
+                  <SortableHeader column="avgPosition" label="Avg<br/>Position" />
+                  <SortableHeader column="impressionsChange" label="Impr. %<br/>YoY" />
                 </tr>
               </thead>
               <tbody>
-                {rankedData.map((row) => (
+                {sortedData.map((row) => (
                   <tr
                     key={row.id}
                     className={`${getRowColor(row)} transition-colors`}
@@ -775,6 +900,9 @@ export default function StoryPitchAnalysis() {
                           View <ExternalLink size={14} />
                         </a>
                       ) : '-'}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-bold">
+                      {row.linkCount || '-'}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-medium">
                       {row.links2025 || '-'}
