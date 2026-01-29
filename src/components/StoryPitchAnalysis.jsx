@@ -221,17 +221,12 @@ export default function StoryPitchAnalysis() {
   const calculateMetrics = useCallback(() => {
     if (!data.length) return { totalStories: 0, totalLinks: 0 };
 
-    // Sum links across all years for each story
+    // Sum links using Study Link # column
     let totalLinks = 0;
 
     data.forEach(item => {
-      // Sum year-based link counts
-      const links2025 = parseFloat(item['2025_link_'] || 0);
-      const links2024 = parseFloat(item['2024_link_'] || 0);
-      const links2023 = parseFloat(item['2023_link_'] || 0);
-      const links2022 = parseFloat(item['2022_link_'] || 0);
-      const links2021 = parseFloat(item['2021_link_'] || 0);
-      totalLinks += links2025 + links2024 + links2023 + links2022 + links2021;
+      // Use Study Link # column for link count
+      totalLinks += parseFloat(item['study_link_'] || 0);
     });
 
     return {
@@ -253,15 +248,15 @@ export default function StoryPitchAnalysis() {
     // Calculate performance score for each story
     // Score based on link count (DA will be added when external service is connected)
     const storiesWithScores = data.map(item => {
-      // Parse year-based link counts
+      // Parse year-based link counts for display
       const links2025 = parseFloat(item['2025_link_'] || 0);
       const links2024 = parseFloat(item['2024_link_'] || 0);
       const links2023 = parseFloat(item['2023_link_'] || 0);
       const links2022 = parseFloat(item['2022_link_'] || 0);
       const links2021 = parseFloat(item['2021_link_'] || 0);
 
-      // Calculate total links across all years
-      const linkCount = links2025 + links2024 + links2023 + links2022 + links2021;
+      // Use Study Link # column for total link count
+      const linkCount = parseFloat(item['study_link_'] || 0);
 
       // Performance score: based on link count only (DA from external service not yet connected)
       const performanceScore = linkCount;

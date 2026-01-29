@@ -162,18 +162,13 @@ export default function RunningTotals() {
 
   // Calculate link statistics from Study Story Data sheet
   const linkStats = useMemo(() => {
-    // Count links from Study Story Data using year-based link columns
+    // Count links from Study Story Data using Study Link # column
     let lawnstarterLinks = 0;
     let lawnloveLinks = 0;
 
     studyStoryData.forEach((story) => {
-      // Sum year-based link counts (2025, 2024, 2023, 2022, 2021)
-      const links2025 = parseInt(story['2025_link_']) || 0;
-      const links2024 = parseInt(story['2024_link_']) || 0;
-      const links2023 = parseInt(story['2023_link_']) || 0;
-      const links2022 = parseInt(story['2022_link_']) || 0;
-      const links2021 = parseInt(story['2021_link_']) || 0;
-      const linkCount = links2025 + links2024 + links2023 + links2022 + links2021;
+      // Use Study Link # column for link count
+      const linkCount = parseInt(story['study_link_']) || 0;
       const brand = story.brand?.toLowerCase() || '';
 
       if (brand.includes('lawnstarter')) {
@@ -194,13 +189,8 @@ export default function RunningTotals() {
   const storyLinkMap = useMemo(() => {
     const map = new Map();
     studyStoryData.forEach((story) => {
-      // Sum year-based link counts (2025, 2024, 2023, 2022, 2021)
-      const links2025 = parseInt(story['2025_link_']) || 0;
-      const links2024 = parseInt(story['2024_link_']) || 0;
-      const links2023 = parseInt(story['2023_link_']) || 0;
-      const links2022 = parseInt(story['2022_link_']) || 0;
-      const links2021 = parseInt(story['2021_link_']) || 0;
-      const linkCount = links2025 + links2024 + links2023 + links2022 + links2021;
+      // Use Study Link # column for link count
+      const linkCount = parseInt(story['study_link_']) || 0;
       // Use story title as key (normalized to lowercase for matching)
       const title = (story.story_title || story.news_peg || '').toLowerCase().trim();
       if (title && linkCount > 0) {
