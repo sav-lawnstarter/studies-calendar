@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { FileText, Link, Users, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, TrendingUp, Target } from 'lucide-react';
 import { format, subMonths, addMonths } from 'date-fns';
-import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
+import { getStoredToken, fetchContentCalendarData, fetchSheetData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
 
 // Custom quarter definitions (same as ContentCalendar)
 // Q4: Dec 1 - Feb 28/29, Q1: Mar 1 - May 31, Q2: Jun 1 - Aug 31, Q3: Sep 1 - Nov 30
@@ -89,11 +89,12 @@ const parseDate = (dateStr) => {
 export default function RunningTotals() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [contentCalendarData, setContentCalendarData] = useState([]);
+  const [studyStoryData, setStudyStoryData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-  // Fetch Content Calendar data
+  // Fetch Content Calendar data and Study Story Data
   const fetchData = useCallback(async () => {
     const token = getStoredToken();
     if (!token) {
@@ -102,8 +103,12 @@ export default function RunningTotals() {
           await loadGoogleScript();
           const newToken = await authenticateWithGoogle(clientId);
           setIsLoading(true);
-          const data = await fetchContentCalendarData(newToken);
-          setContentCalendarData(data);
+          const [calendarData, storyData] = await Promise.all([
+            fetchContentCalendarData(newToken),
+            fetchSheetData(newToken),
+          ]);
+          setContentCalendarData(calendarData);
+          setStudyStoryData(storyData);
           setError(null);
         } catch (err) {
           console.error('Auth error:', err);
@@ -120,8 +125,12 @@ export default function RunningTotals() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchContentCalendarData(token);
-      setContentCalendarData(data);
+      const [calendarData, storyData] = await Promise.all([
+        fetchContentCalendarData(token),
+        fetchSheetData(token),
+      ]);
+      setContentCalendarData(calendarData);
+      setStudyStoryData(storyData);
     } catch (err) {
       console.error('Fetch error:', err);
       setError(err.message);
@@ -151,7 +160,32 @@ export default function RunningTotals() {
     });
   }, [contentCalendarData, quarterInfo]);
 
-  // Calculate statistics
+  // Calculate link statistics from Study Story Data sheet
+  const linkStats = useMemo(() => {
+    // Count links from Study Story Data using "Study Link #" field (parsed as study_link_)
+    let lawnstarterLinks = 0;
+    let lawnloveLinks = 0;
+
+    studyStoryData.forEach((story) => {
+      // The "Study Link #" column becomes study_link_ after parsing
+      const linkCount = parseInt(story.study_link_) || 0;
+      const brand = story.brand?.toLowerCase() || '';
+
+      if (brand.includes('lawnstarter')) {
+        lawnstarterLinks += linkCount;
+      } else if (brand.includes('lawn love')) {
+        lawnloveLinks += linkCount;
+      }
+    });
+
+    return {
+      lawnstarterLinks,
+      lawnloveLinks,
+      totalLinks: lawnstarterLinks + lawnloveLinks,
+    };
+  }, [studyStoryData]);
+
+  // Calculate statistics from Content Calendar
   const stats = useMemo(() => {
     // Total stories pitched (have a pitch date in this quarter)
     const totalStories = quarterStories.length;
@@ -166,28 +200,14 @@ export default function RunningTotals() {
     // Remaining stories due (not yet pitched)
     const remainingStories = totalStories - pitchedStories;
 
-    // LawnStarter stories (links)
+    // Count stories by brand for this quarter
     const lawnstarterStories = quarterStories.filter((s) =>
       s.brand?.toLowerCase().includes('lawnstarter')
-    );
-    const lawnstarterLinks = lawnstarterStories.filter((s) =>
-      s.status?.toLowerCase() === 'pitched' ||
-      s.status?.toLowerCase() === 'published' ||
-      s.status?.toLowerCase() === 'complete'
     ).length;
 
-    // Lawn Love stories (links)
     const lawnloveStories = quarterStories.filter((s) =>
       s.brand?.toLowerCase().includes('lawn love')
-    );
-    const lawnloveLinks = lawnloveStories.filter((s) =>
-      s.status?.toLowerCase() === 'pitched' ||
-      s.status?.toLowerCase() === 'published' ||
-      s.status?.toLowerCase() === 'complete'
     ).length;
-
-    // Total links
-    const totalLinks = lawnstarterLinks + lawnloveLinks;
 
     // Experts contacted and responded
     let totalExpertsContacted = 0;
@@ -208,11 +228,8 @@ export default function RunningTotals() {
       totalStories,
       pitchedStories,
       remainingStories,
-      lawnstarterTotal: lawnstarterStories.length,
-      lawnstarterLinks,
-      lawnloveTotal: lawnloveStories.length,
-      lawnloveLinks,
-      totalLinks,
+      lawnstarterStories,
+      lawnloveStories,
       totalExpertsContacted,
       totalExpertsResponded,
     };
@@ -312,8 +329,9 @@ export default function RunningTotals() {
           </div>
         </div>
 
-        {/* Links by Brand */}
+        {/* Links by Brand (from Study Story Data sheet) */}
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Links by Brand</h2>
+        <p className="text-sm text-gray-500 mb-4">Total links from Study Story Data sheet</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -325,17 +343,11 @@ export default function RunningTotals() {
             </div>
             <div className="flex items-center gap-2">
               <Link size={20} className="text-ls-green" />
-              <p className="text-4xl font-bold text-ls-green">{stats.lawnstarterLinks}</p>
+              <p className="text-4xl font-bold text-ls-green">{linkStats.lawnstarterLinks}</p>
             </div>
             <p className="text-sm text-gray-500 mt-2">
-              of {stats.lawnstarterTotal} stories
+              total links
             </p>
-            <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-ls-green rounded-full transition-all"
-                style={{ width: stats.lawnstarterTotal > 0 ? `${(stats.lawnstarterLinks / stats.lawnstarterTotal) * 100}%` : '0%' }}
-              />
-            </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -348,17 +360,11 @@ export default function RunningTotals() {
             </div>
             <div className="flex items-center gap-2">
               <Link size={20} className="text-green-800" />
-              <p className="text-4xl font-bold text-green-800">{stats.lawnloveLinks}</p>
+              <p className="text-4xl font-bold text-green-800">{linkStats.lawnloveLinks}</p>
             </div>
             <p className="text-sm text-gray-500 mt-2">
-              of {stats.lawnloveTotal} stories
+              total links
             </p>
-            <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-800 rounded-full transition-all"
-                style={{ width: stats.lawnloveTotal > 0 ? `${(stats.lawnloveLinks / stats.lawnloveTotal) * 100}%` : '0%' }}
-              />
-            </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-6 bg-gradient-to-br from-ls-green-lighter to-white">
@@ -367,7 +373,7 @@ export default function RunningTotals() {
             </div>
             <div className="flex items-center gap-2">
               <Link size={24} className="text-ls-green" />
-              <p className="text-5xl font-bold text-ls-green">{stats.totalLinks}</p>
+              <p className="text-5xl font-bold text-ls-green">{linkStats.totalLinks}</p>
             </div>
             <p className="text-sm text-gray-500 mt-2">
               Combined across both brands
