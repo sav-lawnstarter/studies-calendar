@@ -185,6 +185,64 @@ export default function RunningTotals() {
     };
   }, [studyStoryData]);
 
+  // Create a map of story titles to their link counts from Study Story Data
+  const storyLinkMap = useMemo(() => {
+    const map = new Map();
+    studyStoryData.forEach((story) => {
+      const linkCount = parseInt(story.study_link_) || 0;
+      // Use story title as key (normalized to lowercase for matching)
+      const title = (story.story_title || story.news_peg || '').toLowerCase().trim();
+      if (title && linkCount > 0) {
+        map.set(title, linkCount);
+      }
+    });
+    return map;
+  }, [studyStoryData]);
+
+  // Get link count for a story and determine trophy
+  const getStoryLinkInfo = useCallback((story) => {
+    const title = (story.story_title || story.news_peg || '').toLowerCase().trim();
+    return storyLinkMap.get(title) || 0;
+  }, [storyLinkMap]);
+
+  // Calculate top 3 stories by links for trophy display
+  const topStoriesByLinks = useMemo(() => {
+    const storiesWithLinks = quarterStories
+      .map((story) => ({
+        id: story.id,
+        links: getStoryLinkInfo(story),
+      }))
+      .filter((s) => s.links > 0)
+      .sort((a, b) => b.links - a.links);
+
+    const top3 = [];
+    if (storiesWithLinks.length > 0) top3.push({ id: storiesWithLinks[0].id, links: storiesWithLinks[0].links, rank: 1 });
+    if (storiesWithLinks.length > 1 && storiesWithLinks[1].links !== storiesWithLinks[0].links) {
+      top3.push({ id: storiesWithLinks[1].id, links: storiesWithLinks[1].links, rank: 2 });
+    } else if (storiesWithLinks.length > 1) {
+      top3.push({ id: storiesWithLinks[1].id, links: storiesWithLinks[1].links, rank: 1 }); // Tie for 1st
+    }
+    if (storiesWithLinks.length > 2) {
+      const rank = storiesWithLinks[2].links === storiesWithLinks[0].links ? 1 :
+                   storiesWithLinks[2].links === storiesWithLinks[1]?.links ? (top3[1]?.rank || 2) : 3;
+      if (rank <= 3) {
+        top3.push({ id: storiesWithLinks[2].id, links: storiesWithLinks[2].links, rank });
+      }
+    }
+
+    return top3;
+  }, [quarterStories, getStoryLinkInfo]);
+
+  // Get trophy emoji for a story
+  const getTrophyEmoji = useCallback((storyId) => {
+    const topStory = topStoriesByLinks.find((s) => s.id === storyId);
+    if (!topStory) return '';
+    if (topStory.rank === 1) return '🏆 ';
+    if (topStory.rank === 2) return '🥈 ';
+    if (topStory.rank === 3) return '🥉 ';
+    return '';
+  }, [topStoriesByLinks]);
+
   // Calculate statistics from Content Calendar
   const stats = useMemo(() => {
     // Total stories pitched (have a pitch date in this quarter)
@@ -424,16 +482,21 @@ export default function RunningTotals() {
                     <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700">Brand</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700">Pitch Date</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700">Status</th>
+                    <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700">Links</th>
                     <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700">Experts</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {quarterStories.map((story) => {
                     const pitchDate = parseDate(story.pitch_date);
+                    const linkCount = getStoryLinkInfo(story);
+                    const trophy = getTrophyEmoji(story.id);
                     return (
                       <tr key={story.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{story.story_title || story.news_peg || 'Untitled'}</div>
+                          <div className="font-medium text-gray-900">
+                            {trophy}{story.story_title || story.news_peg || 'Untitled'}
+                          </div>
                           {story.news_peg && story.story_title && (
                             <div className="text-sm text-gray-500">{story.news_peg}</div>
                           )}
@@ -469,6 +532,9 @@ export default function RunningTotals() {
                           >
                             {story.status || 'Pending'}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-center text-sm font-semibold text-ls-green">
+                          {linkCount > 0 ? linkCount : '-'}
                         </td>
                         <td className="px-4 py-3 text-center text-sm text-gray-600">
                           {story._experts_contacted || '-'}
