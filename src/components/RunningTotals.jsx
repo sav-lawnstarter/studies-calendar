@@ -192,25 +192,29 @@ export default function RunningTotals() {
     };
   }, [studyStoryData, quarterInfo]);
 
-  // Create a map of story titles to their link counts from Study Story Data
+  // Create a map of pitch dates to their link counts from Study Story Data
   const storyLinkMap = useMemo(() => {
     const map = new Map();
     studyStoryData.forEach((story) => {
       // Use Study Link # column for link count
       const linkCount = parseInt(story['study_link_']) || 0;
-      // Use story title as key (normalized to lowercase for matching)
-      const title = (story.story_title || story.news_peg || '').toLowerCase().trim();
-      if (title && linkCount > 0) {
-        map.set(title, linkCount);
+      // Use pitch_date as key (normalized to YYYY-MM-DD format for matching)
+      const pitchDate = parseDate(story.pitch_date);
+      if (pitchDate && linkCount > 0) {
+        // Normalize to YYYY-MM-DD string for consistent matching
+        const dateKey = pitchDate.toISOString().split('T')[0];
+        map.set(dateKey, linkCount);
       }
     });
     return map;
   }, [studyStoryData]);
 
-  // Get link count for a story and determine trophy
+  // Get link count for a story by matching pitch_date
   const getStoryLinkInfo = useCallback((story) => {
-    const title = (story.story_title || story.news_peg || '').toLowerCase().trim();
-    return storyLinkMap.get(title) || 0;
+    const pitchDate = parseDate(story.pitch_date);
+    if (!pitchDate) return 0;
+    const dateKey = pitchDate.toISOString().split('T')[0];
+    return storyLinkMap.get(dateKey) || 0;
   }, [storyLinkMap]);
 
   // Calculate top 3 stories by links for trophy display
