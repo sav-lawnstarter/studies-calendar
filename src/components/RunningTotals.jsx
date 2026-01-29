@@ -160,16 +160,17 @@ export default function RunningTotals() {
     });
   }, [contentCalendarData, quarterInfo]);
 
-  // Calculate link statistics from Study Story Data sheet - filter by pitch_date in Study Story Data
+  // Calculate link statistics from Study Story Data sheet - filter by date_pitched in Study Story Data
   const linkStats = useMemo(() => {
     // Count links from Study Story Data using Study Link # column
-    // Filter by pitch_date directly from Study Story Data (not by title matching)
+    // Filter by date_pitched directly from Study Story Data (not by title matching)
     let lawnstarterLinks = 0;
     let lawnloveLinks = 0;
 
     studyStoryData.forEach((story) => {
-      // Check if story has a pitch_date and if it falls within current quarter
-      const pitchDate = parseDate(story.pitch_date);
+      // Check if story has a date_pitched and if it falls within current quarter
+      // Note: Study Story Data uses "Date Pitched" column (date_pitched), not "Pitch Date" (pitch_date)
+      const pitchDate = parseDate(story.date_pitched);
       if (pitchDate && (pitchDate < quarterInfo.start || pitchDate > quarterInfo.end)) {
         return; // Skip stories outside current quarter
       }
@@ -198,8 +199,9 @@ export default function RunningTotals() {
     studyStoryData.forEach((story) => {
       // Use Study Link # column for link count
       const linkCount = parseInt(story['study_link_']) || 0;
-      // Use pitch_date as key (normalized to YYYY-MM-DD format for matching)
-      const pitchDate = parseDate(story.pitch_date);
+      // Use date_pitched as key (normalized to YYYY-MM-DD format for matching)
+      // Note: Study Story Data uses "Date Pitched" column (date_pitched), not "Pitch Date" (pitch_date)
+      const pitchDate = parseDate(story.date_pitched);
       if (pitchDate && linkCount > 0) {
         // Normalize to YYYY-MM-DD string for consistent matching
         const dateKey = pitchDate.toISOString().split('T')[0];
