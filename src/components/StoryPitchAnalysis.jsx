@@ -219,14 +219,10 @@ export default function StoryPitchAnalysis() {
 
   // Calculate metrics from data
   const calculateMetrics = useCallback(() => {
-    if (!data.length) return { avgDA: 0, linksAbove50: 0, linksAbove80: 0 };
+    if (!data.length) return { totalStories: 0, totalLinks: 0 };
 
-    // Parse link numbers and calculate DA metrics
     // Sum links across all years for each story
     let totalLinks = 0;
-    let linksAbove50 = 0;
-    let linksAbove80 = 0;
-    let linkSum = 0;
 
     data.forEach(item => {
       // Sum year-based link counts
@@ -235,21 +231,16 @@ export default function StoryPitchAnalysis() {
       const links2023 = parseFloat(item['2023_link_'] || 0);
       const links2022 = parseFloat(item['2022_link_'] || 0);
       const links2021 = parseFloat(item['2021_link_'] || 0);
-      const linkNum = links2025 + links2024 + links2023 + links2022 + links2021;
-
-      if (linkNum > 0) {
-        totalLinks++;
-        linkSum += linkNum;
-        if (linkNum > 50) linksAbove50++;
-        if (linkNum > 80) linksAbove80++;
-      }
+      totalLinks += links2025 + links2024 + links2023 + links2022 + links2021;
     });
 
     return {
-      avgDA: totalLinks > 0 ? (linkSum / totalLinks).toFixed(1) : 0,
-      linksAbove50,
-      linksAbove80,
       totalStories: data.length,
+      totalLinks,
+      // DA metrics will be added when external service is connected
+      avgDA: null,
+      linksAbove50: null,
+      linksAbove80: null,
     };
   }, [data]);
 
@@ -260,7 +251,7 @@ export default function StoryPitchAnalysis() {
     if (!data.length) return [];
 
     // Calculate performance score for each story
-    // Score = (link count * 0.6) + (average DA quality * 0.4)
+    // Score based on link count (DA will be added when external service is connected)
     const storiesWithScores = data.map(item => {
       // Parse year-based link counts
       const links2025 = parseFloat(item['2025_link_'] || 0);
@@ -272,12 +263,8 @@ export default function StoryPitchAnalysis() {
       // Calculate total links across all years
       const linkCount = links2025 + links2024 + links2023 + links2022 + links2021;
 
-      // Approximate average DA based on the link quality distribution
-      // Using available metrics to estimate quality
-      const avgDA = linkCount > 0 ? Math.min(100, 30 + (linkCount * 0.5)) : 0;
-
-      // Performance score: weighted combination of link count and estimated DA
-      const performanceScore = (linkCount * 0.6) + (avgDA * 0.4);
+      // Performance score: based on link count only (DA from external service not yet connected)
+      const performanceScore = linkCount;
 
       return {
         ...item,
@@ -287,10 +274,9 @@ export default function StoryPitchAnalysis() {
         links2022,
         links2021,
         linkCount,
-        avgDA: avgDA.toFixed(1),
+        avgDA: null, // Will be populated when external DA service is connected
         performanceScore,
         hasHighLinks: linkCount >= 80,
-        hasHighDAOutlet: avgDA > 80,
       };
     });
 
@@ -333,9 +319,6 @@ export default function StoryPitchAnalysis() {
     if (story.hasHighLinks) {
       indicators += '🔥 '; // 80+ links
     }
-    if (story.hasHighDAOutlet) {
-      indicators += '⭐ '; // DA > 80
-    }
     return indicators;
   }, []);
 
@@ -356,7 +339,6 @@ export default function StoryPitchAnalysis() {
         totalLinks,
         avgLinksPerStory,
         storiesWithHighLinks: rankedData.filter(s => s.hasHighLinks).length,
-        storiesWithHighDA: rankedData.filter(s => s.hasHighDAOutlet).length,
       },
       bestPerformers,
       worstPerformers,
@@ -414,10 +396,6 @@ export default function StoryPitchAnalysis() {
             <div class="value">${report.summary.storiesWithHighLinks}</div>
             <div class="label">Stories with 80+ Links</div>
           </div>
-          <div class="summary-card">
-            <div class="value">${report.summary.storiesWithHighDA}</div>
-            <div class="label">Stories with DA>80 Outlets</div>
-          </div>
         </div>
 
         <h2 class="best">Best Performers</h2>
@@ -459,7 +437,7 @@ export default function StoryPitchAnalysis() {
         <h2>All Stories by Performance</h2>
         <table>
           <thead>
-            <tr><th>Rank</th><th>Story Title</th><th>Brand</th><th>Links</th><th>Avg DA</th><th>Score</th></tr>
+            <tr><th>Rank</th><th>Story Title</th><th>Brand</th><th>Links</th><th>Score</th></tr>
           </thead>
           <tbody>
             ${report.allStories.map(s => `
@@ -468,7 +446,6 @@ export default function StoryPitchAnalysis() {
                 <td>${s.study_title || '-'}</td>
                 <td>${s.brand || '-'}</td>
                 <td>${s.linkCount}</td>
-                <td>${s.avgDA}</td>
                 <td>${s.performanceScore.toFixed(1)}</td>
               </tr>
             `).join('')}
@@ -489,13 +466,12 @@ export default function StoryPitchAnalysis() {
   const exportReportAsCSV = useCallback(() => {
     const report = generateReport();
 
-    const headers = ['Rank', 'Story Title', 'Brand', 'Links', 'Avg DA', 'Performance Score', 'Date Pitched', 'Comment'];
+    const headers = ['Rank', 'Story Title', 'Brand', 'Links', 'Performance Score', 'Date Pitched', 'Comment'];
     const rows = report.allStories.map(s => [
       s.rank,
       `"${(s.study_title || '').replace(/"/g, '""')}"`,
       s.brand || '',
       s.linkCount,
-      s.avgDA,
       s.performanceScore.toFixed(1),
       s.date_pitched || '',
       `"${(comments[s.id] || '').replace(/"/g, '""')}"`,
@@ -678,8 +654,8 @@ export default function StoryPitchAnalysis() {
                 <Link2 size={20} className="text-ls-blue" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{metrics.avgDA}</p>
-                <p className="text-sm text-gray-500">Avg Domain Authority</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics.totalLinks}</p>
+                <p className="text-sm text-gray-500">Total Links</p>
               </div>
             </div>
           </div>
@@ -689,8 +665,8 @@ export default function StoryPitchAnalysis() {
                 <Link2 size={20} className="text-ls-orange" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{metrics.linksAbove50}</p>
-                <p className="text-sm text-gray-500">Links DA &gt; 50</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics.avgDA ?? '-'}</p>
+                <p className="text-sm text-gray-500">Avg Domain Authority</p>
               </div>
             </div>
           </div>
@@ -700,7 +676,7 @@ export default function StoryPitchAnalysis() {
                 <Link2 size={20} className="text-purple-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{metrics.linksAbove80}</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics.linksAbove80 ?? '-'}</p>
                 <p className="text-sm text-gray-500">Links DA &gt; 80</p>
               </div>
             </div>
@@ -734,9 +710,6 @@ export default function StoryPitchAnalysis() {
           </span>
           <span className="flex items-center gap-2">
             🔥 80+ links
-          </span>
-          <span className="flex items-center gap-2">
-            ⭐ DA &gt; 80
           </span>
         </div>
       )}
