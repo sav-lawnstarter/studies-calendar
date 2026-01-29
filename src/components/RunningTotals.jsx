@@ -193,34 +193,36 @@ export default function RunningTotals() {
     };
   }, [studyStoryData, quarterInfo]);
 
-  // Helper to normalize title for matching (lowercase, trim whitespace)
-  const normalizeTitle = useCallback((title) => {
-    if (!title) return '';
-    return title.toLowerCase().trim();
+  // Normalize date string to YYYY-MM-DD format for consistent matching
+  const normalizeDate = useCallback((dateStr) => {
+    const parsed = parseDate(dateStr);
+    if (!parsed) return '';
+    // Return ISO date string (YYYY-MM-DD)
+    return parsed.toISOString().split('T')[0];
   }, []);
 
-  // Create a map of study titles to their link counts from Study Story Data
-  const storyLinkMap = useMemo(() => {
+  // Create a map of pitch dates to their link counts from Study Story Data
+  // Since each story has a unique pitch date, we can match by date
+  const storyLinkMapByDate = useMemo(() => {
     const map = new Map();
     studyStoryData.forEach((story) => {
       // Use Study Link # column for link count
       const linkCount = parseInt(story['study_link_']) || 0;
-      // Use study_title as key (normalized for matching)
-      const title = normalizeTitle(story.study_title);
-      if (title && linkCount > 0) {
-        map.set(title, linkCount);
+      // Use date as key - support both date_pitched and pitch_date column names
+      const dateKey = normalizeDate(story.date_pitched || story.pitch_date);
+      if (dateKey && linkCount > 0) {
+        map.set(dateKey, linkCount);
       }
     });
     return map;
-  }, [studyStoryData, normalizeTitle]);
+  }, [studyStoryData, normalizeDate]);
 
-  // Get link count for a story by matching title
-  // Content Calendar uses story_title, Study Story Data uses study_title
+  // Get link count for a story by matching pitch date
   const getStoryLinkInfo = useCallback((story) => {
-    const title = normalizeTitle(story.story_title);
-    if (!title) return 0;
-    return storyLinkMap.get(title) || 0;
-  }, [storyLinkMap, normalizeTitle]);
+    const dateKey = normalizeDate(story.pitch_date);
+    if (!dateKey) return 0;
+    return storyLinkMapByDate.get(dateKey) || 0;
+  }, [storyLinkMapByDate, normalizeDate]);
 
   // Calculate top 3 stories by links for trophy display
   const topStoriesByLinks = useMemo(() => {
