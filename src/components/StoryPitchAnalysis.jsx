@@ -41,6 +41,16 @@ export default function StoryPitchAnalysis() {
   const [isLoadingStoryMetrics, setIsLoadingStoryMetrics] = useState(false);
   const [storyMetricsError, setStoryMetricsError] = useState(null);
 
+  // Cache for metrics displayed in the table (persists after viewing stories)
+  const [metricsCache, setMetricsCache] = useState(() => {
+    try {
+      const stored = localStorage.getItem('story-metrics-cache');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Comments state
   const [comments, setComments] = useState(() => {
     try {
@@ -60,6 +70,11 @@ export default function StoryPitchAnalysis() {
   useEffect(() => {
     localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(comments));
   }, [comments]);
+
+  // Save metrics cache to localStorage
+  useEffect(() => {
+    localStorage.setItem('story-metrics-cache', JSON.stringify(metricsCache));
+  }, [metricsCache]);
 
   // Update comment for a story
   const updateComment = useCallback((storyId, comment) => {
@@ -178,7 +193,7 @@ export default function StoryPitchAnalysis() {
     }
   }, []);
 
-  // Fetch metrics when story is selected
+  // Fetch metrics when story is selected and cache them
   useEffect(() => {
     if (selectedStory) {
       fetchStoryMetrics(selectedStory);
@@ -187,6 +202,20 @@ export default function StoryPitchAnalysis() {
       setStoryMetricsError(null);
     }
   }, [selectedStory, fetchStoryMetrics]);
+
+  // Cache metrics when they're loaded
+  useEffect(() => {
+    if (selectedStory && storyMetrics?.gsc) {
+      setMetricsCache(prev => ({
+        ...prev,
+        [selectedStory.id]: {
+          avgPosition: storyMetrics.gsc.current.position,
+          impressionsChange: storyMetrics.gsc.comparison.impressionsChange,
+          lastUpdated: new Date().toISOString(),
+        },
+      }));
+    }
+  }, [selectedStory, storyMetrics]);
 
   // Calculate metrics from data
   const calculateMetrics = useCallback(() => {
@@ -718,7 +747,8 @@ export default function StoryPitchAnalysis() {
                   <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">National O/R</th>
                   <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">National C/R</th>
                   <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">Date Pitched</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b min-w-[200px]">Comments</th>
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b" title="Click story to load">Avg Position</th>
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b" title="Click story to load">Impr. % YoY</th>
                 </tr>
               </thead>
               <tbody>
@@ -771,14 +801,19 @@ export default function StoryPitchAnalysis() {
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.date_pitched || '-'}
                     </td>
-                    <td className="px-4 py-2 text-sm border-b">
-                      <input
-                        type="text"
-                        value={comments[row.id] || ''}
-                        onChange={(e) => updateComment(row.id, e.target.value)}
-                        placeholder="Add comment..."
-                        className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-ls-green"
-                      />
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
+                      {metricsCache[row.id]?.avgPosition !== undefined
+                        ? formatPosition(metricsCache[row.id].avgPosition)
+                        : <span className="text-gray-400 text-xs">Click to load</span>}
+                    </td>
+                    <td className="px-3 py-3 text-sm border-b text-center">
+                      {metricsCache[row.id]?.impressionsChange !== null && metricsCache[row.id]?.impressionsChange !== undefined ? (
+                        <span className={getChangeClass(metricsCache[row.id].impressionsChange)}>
+                          {getChangeArrow(metricsCache[row.id].impressionsChange)}{metricsCache[row.id].impressionsChange}%
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">Click to load</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1010,6 +1045,22 @@ export default function StoryPitchAnalysis() {
                 ) : (
                   <p className="text-sm text-gray-500 py-2">No Analytics data available for this URL.</p>
                 )}
+              </div>
+
+              {/* Comments Section */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <MessageSquare size={16} className="text-ls-green" />
+                  Notes & Comments
+                </h4>
+                <textarea
+                  value={comments[selectedStory.id] || ''}
+                  onChange={(e) => updateComment(selectedStory.id, e.target.value)}
+                  placeholder="Add notes or comments about this story..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-ls-green focus:ring-1 focus:ring-ls-green resize-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">Comments are saved automatically to your browser.</p>
               </div>
 
               {storyMetricsError && (
