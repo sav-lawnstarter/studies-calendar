@@ -23,6 +23,14 @@ import {
 // Local storage key for comments
 const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
 
+// Helper to parse numbers that may contain commas (e.g., "1,174" -> 1174)
+const parseNumberWithCommas = (value) => {
+  if (!value) return 0;
+  // Remove commas and parse as float
+  const cleaned = String(value).replace(/,/g, '');
+  return parseFloat(cleaned) || 0;
+};
+
 export default function StoryPitchAnalysis() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -230,7 +238,7 @@ export default function StoryPitchAnalysis() {
 
     data.forEach(item => {
       // Use Study Link # column for link count
-      totalLinks += parseFloat(item['study_link_'] || 0);
+      totalLinks += parseNumberWithCommas(item['study_link_']);
     });
 
     return {
@@ -252,15 +260,15 @@ export default function StoryPitchAnalysis() {
     // Calculate performance score for each story
     // Score based on link count (DA will be added when external service is connected)
     const storiesWithScores = data.map(item => {
-      // Parse year-based link counts for display
-      const links2025 = parseFloat(item['2025_link_'] || 0);
-      const links2024 = parseFloat(item['2024_link_'] || 0);
-      const links2023 = parseFloat(item['2023_link_'] || 0);
-      const links2022 = parseFloat(item['2022_link_'] || 0);
-      const links2021 = parseFloat(item['2021_link_'] || 0);
+      // Parse year-based link counts for display (handle commas in numbers)
+      const links2025 = parseNumberWithCommas(item['2025_link_']);
+      const links2024 = parseNumberWithCommas(item['2024_link_']);
+      const links2023 = parseNumberWithCommas(item['2023_link_']);
+      const links2022 = parseNumberWithCommas(item['2022_link_']);
+      const links2021 = parseNumberWithCommas(item['2021_link_']);
 
       // Use Study Link # column for total link count
-      const linkCount = parseFloat(item['study_link_'] || 0);
+      const linkCount = parseNumberWithCommas(item['study_link_']);
 
       // Performance score: based on link count only (DA from external service not yet connected)
       const performanceScore = linkCount;
