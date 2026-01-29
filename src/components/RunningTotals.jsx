@@ -169,9 +169,19 @@ export default function RunningTotals() {
   }, []);
 
   // Helper function to normalize title for matching
+  // Aggressively normalize to handle punctuation differences between sheets
   const normalizeTitle = useCallback((title) => {
     if (!title) return '';
-    return title.toLowerCase().trim().replace(/\s+/g, ' ');
+    return title
+      .toLowerCase()
+      .trim()
+      // Remove common punctuation that might differ between sheets
+      .replace(/[''`]/g, '') // Remove apostrophes and quotes
+      .replace(/[""]/g, '') // Remove smart quotes
+      .replace(/[:\-–—]/g, ' ') // Replace colons and dashes with spaces
+      .replace(/[.,!?;]/g, '') // Remove other punctuation
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .trim();
   }, []);
 
   // Calculate link statistics from Study Story Data sheet - filter by date in Study Story Data
@@ -220,6 +230,7 @@ export default function RunningTotals() {
   const storyLinkMaps = useMemo(() => {
     const byTitle = new Map();
     const byDate = new Map();
+    const allTitles = []; // Store all titles for fuzzy matching
 
     studyStoryData.forEach((story) => {
       // Use helper to get link count (supports multiple column names)
@@ -229,6 +240,7 @@ export default function RunningTotals() {
       const title = normalizeTitle(story.study_title || story.story_title || story.title);
       if (title && linkCount > 0) {
         byTitle.set(title, linkCount);
+        allTitles.push({ title, linkCount });
       }
 
       // Also add to date map as fallback - support both date_pitched and pitch_date column names
@@ -238,21 +250,40 @@ export default function RunningTotals() {
       }
     });
 
-    return { byTitle, byDate };
+    return { byTitle, byDate, allTitles };
   }, [studyStoryData, normalizeDate, normalizeTitle, getLinkCount]);
 
-  // Get link count for a story by matching title first, then falling back to date
+  // Get link count for a story by matching title first, then falling back to fuzzy match, then date
   const getStoryLinkInfo = useCallback((story) => {
     // Try to match by title first (more reliable across sheets)
     const title = normalizeTitle(story.story_title || story.title);
     if (title) {
+      // 1. Exact title match
       const linksByTitle = storyLinkMaps.byTitle.get(title);
       if (linksByTitle !== undefined) {
         return linksByTitle;
       }
+
+      // 2. Fuzzy match - check if title contains or is contained in any study title
+      // This handles cases where titles have minor differences
+      for (const { title: studyTitle, linkCount } of storyLinkMaps.allTitles) {
+        // Check if either title contains the other (at least 20 chars to avoid false positives)
+        if (title.length >= 20 && studyTitle.length >= 20) {
+          if (studyTitle.includes(title) || title.includes(studyTitle)) {
+            return linkCount;
+          }
+        }
+        // Also check for significant word overlap (at least 3 matching words of 4+ chars)
+        const titleWords = title.split(' ').filter(w => w.length >= 4);
+        const studyWords = studyTitle.split(' ').filter(w => w.length >= 4);
+        const matchingWords = titleWords.filter(w => studyWords.includes(w));
+        if (matchingWords.length >= 3) {
+          return linkCount;
+        }
+      }
     }
 
-    // Fall back to date matching
+    // 3. Fall back to date matching
     const dateKey = normalizeDate(story.pitch_date || story.date_pitched);
     if (dateKey) {
       return storyLinkMaps.byDate.get(dateKey) || 0;
