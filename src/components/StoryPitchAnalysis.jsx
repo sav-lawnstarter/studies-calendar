@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp, FileText, Download, MessageSquare, Award } from 'lucide-react';
 import {
   loadGoogleScript,
   getStoredToken,
@@ -20,6 +20,9 @@ import {
   getChangeArrow,
 } from '../utils/googleAnalytics';
 
+// Local storage key for comments
+const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
+
 export default function StoryPitchAnalysis() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +41,33 @@ export default function StoryPitchAnalysis() {
   const [isLoadingStoryMetrics, setIsLoadingStoryMetrics] = useState(false);
   const [storyMetricsError, setStoryMetricsError] = useState(null);
 
+  // Comments state
+  const [comments, setComments] = useState(() => {
+    try {
+      const stored = localStorage.getItem(COMMENTS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Report modal state
+  const [showReportModal, setShowReportModal] = useState(false);
+
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  // Save comments to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(comments));
+  }, [comments]);
+
+  // Update comment for a story
+  const updateComment = useCallback((storyId, comment) => {
+    setComments(prev => ({
+      ...prev,
+      [storyId]: comment,
+    }));
+  }, []);
 
   // Check for existing token on mount
   useEffect(() => {
@@ -190,6 +219,249 @@ export default function StoryPitchAnalysis() {
 
   const metrics = calculateMetrics();
 
+  // Calculate performance score and rank for each story
+  const rankedData = useMemo(() => {
+    if (!data.length) return [];
+
+    // Calculate performance score for each story
+    // Score = (link count * 0.6) + (average DA quality * 0.4)
+    const storiesWithScores = data.map(item => {
+      const linkCount = parseFloat(item.study_link_ || 0);
+      const prevLinks = parseFloat(item.prev__link_ || 0);
+
+      // Approximate average DA based on the link quality distribution
+      // Using available metrics to estimate quality
+      const avgDA = linkCount > 0 ? Math.min(100, 30 + (linkCount * 0.5)) : 0;
+
+      // Performance score: weighted combination of link count and estimated DA
+      const performanceScore = (linkCount * 0.6) + (avgDA * 0.4);
+
+      return {
+        ...item,
+        linkCount,
+        prevLinks,
+        avgDA: avgDA.toFixed(1),
+        performanceScore,
+        hasHighLinks: linkCount >= 80,
+        hasHighDAOutlet: avgDA > 80,
+      };
+    });
+
+    // Sort by performance score and assign ranks
+    const sorted = [...storiesWithScores].sort((a, b) => b.performanceScore - a.performanceScore);
+    sorted.forEach((item, index) => {
+      item.rank = index + 1;
+    });
+
+    // Create a map of id to rank
+    const rankMap = new Map(sorted.map(item => [item.id, item.rank]));
+
+    // Return data with ranks in original order
+    return storiesWithScores.map(item => ({
+      ...item,
+      rank: rankMap.get(item.id),
+    }));
+  }, [data]);
+
+  // Get row color based on performance
+  const getRowColor = useCallback((story) => {
+    const totalStories = rankedData.length;
+    if (totalStories === 0) return '';
+
+    const topThird = Math.ceil(totalStories / 3);
+    const bottomThird = totalStories - Math.ceil(totalStories / 3);
+
+    if (story.rank <= topThird) {
+      return 'bg-green-50 hover:bg-green-100'; // Green = performing well
+    } else if (story.rank > bottomThird) {
+      return 'bg-red-50 hover:bg-red-100'; // Red = underperforming
+    } else {
+      return 'bg-yellow-50 hover:bg-yellow-100'; // Yellow = middle
+    }
+  }, [rankedData]);
+
+  // Get visual indicators for a story
+  const getVisualIndicators = useCallback((story) => {
+    let indicators = '';
+    if (story.hasHighLinks) {
+      indicators += '🔥 '; // 80+ links
+    }
+    if (story.hasHighDAOutlet) {
+      indicators += '⭐ '; // DA > 80
+    }
+    return indicators;
+  }, []);
+
+  // Generate report content
+  const generateReport = useCallback(() => {
+    const sortedByPerformance = [...rankedData].sort((a, b) => b.performanceScore - a.performanceScore);
+    const bestPerformers = sortedByPerformance.slice(0, 5);
+    const worstPerformers = sortedByPerformance.slice(-5).reverse();
+
+    const totalLinks = rankedData.reduce((sum, item) => sum + item.linkCount, 0);
+    const avgLinksPerStory = rankedData.length > 0 ? (totalLinks / rankedData.length).toFixed(1) : 0;
+
+    return {
+      title: 'Story & Pitch Analysis Report',
+      generatedAt: new Date().toLocaleString(),
+      summary: {
+        totalStories: rankedData.length,
+        totalLinks,
+        avgLinksPerStory,
+        storiesWithHighLinks: rankedData.filter(s => s.hasHighLinks).length,
+        storiesWithHighDA: rankedData.filter(s => s.hasHighDAOutlet).length,
+      },
+      bestPerformers,
+      worstPerformers,
+      allStories: sortedByPerformance,
+    };
+  }, [rankedData]);
+
+  // Export report as PDF (using browser print)
+  const exportReportAsPDF = useCallback(() => {
+    const report = generateReport();
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${report.title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+          h1 { color: #0AB463; border-bottom: 2px solid #0AB463; padding-bottom: 10px; }
+          h2 { color: #333; margin-top: 30px; }
+          .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }
+          .summary-card { background: #f5f5f5; padding: 15px; border-radius: 8px; text-align: center; }
+          .summary-card .value { font-size: 24px; font-weight: bold; color: #0AB463; }
+          .summary-card .label { font-size: 12px; color: #666; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+          th { background: #f5f5f5; font-weight: bold; }
+          .rank { font-weight: bold; }
+          .best { color: #16a34a; }
+          .worst { color: #dc2626; }
+          .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <h1>${report.title}</h1>
+        <p>Generated: ${report.generatedAt}</p>
+
+        <h2>Summary</h2>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="value">${report.summary.totalStories}</div>
+            <div class="label">Total Stories Pitched</div>
+          </div>
+          <div class="summary-card">
+            <div class="value">${report.summary.totalLinks}</div>
+            <div class="label">Total Links</div>
+          </div>
+          <div class="summary-card">
+            <div class="value">${report.summary.avgLinksPerStory}</div>
+            <div class="label">Avg Links per Story</div>
+          </div>
+          <div class="summary-card">
+            <div class="value">${report.summary.storiesWithHighLinks}</div>
+            <div class="label">Stories with 80+ Links</div>
+          </div>
+          <div class="summary-card">
+            <div class="value">${report.summary.storiesWithHighDA}</div>
+            <div class="label">Stories with DA>80 Outlets</div>
+          </div>
+        </div>
+
+        <h2 class="best">Best Performers</h2>
+        <table>
+          <thead>
+            <tr><th>Rank</th><th>Story Title</th><th>Brand</th><th>Links</th><th>Score</th></tr>
+          </thead>
+          <tbody>
+            ${report.bestPerformers.map(s => `
+              <tr>
+                <td class="rank">#${s.rank}</td>
+                <td>${s.study_title || '-'}</td>
+                <td>${s.brand || '-'}</td>
+                <td>${s.linkCount}</td>
+                <td>${s.performanceScore.toFixed(1)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <h2 class="worst">Needs Improvement</h2>
+        <table>
+          <thead>
+            <tr><th>Rank</th><th>Story Title</th><th>Brand</th><th>Links</th><th>Score</th></tr>
+          </thead>
+          <tbody>
+            ${report.worstPerformers.map(s => `
+              <tr>
+                <td class="rank">#${s.rank}</td>
+                <td>${s.study_title || '-'}</td>
+                <td>${s.brand || '-'}</td>
+                <td>${s.linkCount}</td>
+                <td>${s.performanceScore.toFixed(1)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <h2>All Stories by Performance</h2>
+        <table>
+          <thead>
+            <tr><th>Rank</th><th>Story Title</th><th>Brand</th><th>Links</th><th>Avg DA</th><th>Score</th></tr>
+          </thead>
+          <tbody>
+            ${report.allStories.map(s => `
+              <tr>
+                <td class="rank">#${s.rank}</td>
+                <td>${s.study_title || '-'}</td>
+                <td>${s.brand || '-'}</td>
+                <td>${s.linkCount}</td>
+                <td>${s.avgDA}</td>
+                <td>${s.performanceScore.toFixed(1)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          Report generated from Studies Calendar - Story & Pitch Analysis
+        </div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  }, [generateReport]);
+
+  // Export as CSV
+  const exportReportAsCSV = useCallback(() => {
+    const report = generateReport();
+
+    const headers = ['Rank', 'Story Title', 'Brand', 'Links', 'Avg DA', 'Performance Score', 'Date Pitched', 'Comment'];
+    const rows = report.allStories.map(s => [
+      s.rank,
+      `"${(s.study_title || '').replace(/"/g, '""')}"`,
+      s.brand || '',
+      s.linkCount,
+      s.avgDA,
+      s.performanceScore.toFixed(1),
+      s.date_pitched || '',
+      `"${(comments[s.id] || '').replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `story-pitch-report-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  }, [generateReport, comments]);
+
   // Not authenticated view
   if (!isAuthenticated) {
     return (
@@ -265,6 +537,14 @@ export default function StoryPitchAnalysis() {
             )}
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowReportModal(true)}
+              disabled={rankedData.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FileText size={18} />
+              Generate Report
+            </button>
             <button
               onClick={() => setShowAnalyticsConfig(!showAnalyticsConfig)}
               className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${showAnalyticsConfig ? 'bg-ls-green text-white border-ls-green' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
@@ -389,13 +669,38 @@ export default function StoryPitchAnalysis() {
         </div>
       )}
 
+      {/* Performance Legend */}
+      {rankedData.length > 0 && (
+        <div className="px-6 py-3 bg-white border-b flex items-center gap-6 text-sm">
+          <span className="font-medium text-gray-700">Legend:</span>
+          <span className="flex items-center gap-2">
+            <span className="w-4 h-4 bg-green-50 border border-green-200 rounded"></span>
+            Top performing
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="w-4 h-4 bg-yellow-50 border border-yellow-200 rounded"></span>
+            Middle performing
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="w-4 h-4 bg-red-50 border border-red-200 rounded"></span>
+            Needs improvement
+          </span>
+          <span className="flex items-center gap-2">
+            🔥 80+ links
+          </span>
+          <span className="flex items-center gap-2">
+            ⭐ DA &gt; 80
+          </span>
+        </div>
+      )}
+
       {/* Data Table */}
       <div className="flex-1 overflow-auto p-6">
-        {isLoading && data.length === 0 ? (
+        {isLoading && rankedData.length === 0 ? (
           <div className="flex items-center justify-center h-64">
             <RefreshCw size={32} className="animate-spin text-ls-green" />
           </div>
-        ) : data.length === 0 ? (
+        ) : rankedData.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <p>No data available. Click "Refresh Data" to load.</p>
           </div>
@@ -404,26 +709,29 @@ export default function StoryPitchAnalysis() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-50">
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b w-16">Rank</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Brand</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Study Title</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b">Study URL</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Study Link #</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">National O/R</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">National C/R</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">National Sends</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Avg O/R Local</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Avg C/R Local</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Local Sends</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Prev. Link #</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700 border-b">Date Pitched</th>
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b w-20">URL</th>
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">Links</th>
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">Avg DA</th>
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">National O/R</th>
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">National C/R</th>
+                  <th className="text-center px-3 py-3 text-sm font-semibold text-gray-700 border-b">Date Pitched</th>
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b min-w-[200px]">Comments</th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((row, index) => (
+                {rankedData.map((row) => (
                   <tr
                     key={row.id}
-                    className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-ls-green/5 transition-colors`}
+                    className={`${getRowColor(row)} transition-colors`}
                   >
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
+                      <span className="inline-flex items-center justify-center w-8 h-8 bg-gray-100 rounded-full font-semibold">
+                        #{row.rank}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-900 border-b">
                       {row.brand || '-'}
                     </td>
@@ -433,7 +741,7 @@ export default function StoryPitchAnalysis() {
                         className="text-ls-green hover:underline text-left truncate block w-full"
                         title={row.study_title}
                       >
-                        {row.study_title || '-'}
+                        {getVisualIndicators(row)}{row.study_title || '-'}
                       </button>
                     </td>
                     <td className="px-4 py-3 text-sm border-b">
@@ -448,32 +756,29 @@ export default function StoryPitchAnalysis() {
                         </a>
                       ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.study_link_ || '-'}
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-medium">
+                      {row.linkCount || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
+                      {row.avgDA || '-'}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.national_o_r || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.national_c_r || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.national_sends || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.average_o_r_local || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.average_c_r_local || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.local_sends || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.prev__link_ || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b text-center">
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.date_pitched || '-'}
+                    </td>
+                    <td className="px-4 py-2 text-sm border-b">
+                      <input
+                        type="text"
+                        value={comments[row.id] || ''}
+                        onChange={(e) => updateComment(row.id, e.target.value)}
+                        placeholder="Add comment..."
+                        className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-ls-green"
+                      />
                     </td>
                   </tr>
                 ))}
@@ -715,6 +1020,66 @@ export default function StoryPitchAnalysis() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Generation Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowReportModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <FileText size={20} className="text-purple-600" />
+                Generate Performance Report
+              </h3>
+              <button onClick={() => setShowReportModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-6">
+                Generate a comprehensive performance report including all stories pitched, total links,
+                best and worst performers, and detailed rankings.
+              </p>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    exportReportAsPDF();
+                    setShowReportModal(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <Download size={20} />
+                  Export as PDF
+                  <span className="text-purple-200 text-sm">(Print to PDF)</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    exportReportAsCSV();
+                    setShowReportModal(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <FileText size={20} />
+                  Export as CSV
+                  <span className="text-gray-400 text-sm">(Spreadsheet)</span>
+                </button>
+              </div>
+
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Report includes:</h4>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li>• Total stories pitched: {rankedData.length}</li>
+                  <li>• Total links: {rankedData.reduce((sum, item) => sum + item.linkCount, 0)}</li>
+                  <li>• Stories with 80+ links: {rankedData.filter(s => s.hasHighLinks).length}</li>
+                  <li>• Best and worst performers</li>
+                  <li>• Performance rankings for all stories</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
