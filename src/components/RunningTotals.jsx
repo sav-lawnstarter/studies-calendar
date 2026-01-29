@@ -193,31 +193,34 @@ export default function RunningTotals() {
     };
   }, [studyStoryData, quarterInfo]);
 
-  // Create a map of pitch dates to their link counts from Study Story Data
+  // Helper to normalize title for matching (lowercase, trim whitespace)
+  const normalizeTitle = useCallback((title) => {
+    if (!title) return '';
+    return title.toLowerCase().trim();
+  }, []);
+
+  // Create a map of study titles to their link counts from Study Story Data
   const storyLinkMap = useMemo(() => {
     const map = new Map();
     studyStoryData.forEach((story) => {
       // Use Study Link # column for link count
       const linkCount = parseInt(story['study_link_']) || 0;
-      // Use date as key (normalized to YYYY-MM-DD format for matching)
-      // Support both "Date Pitched" (date_pitched) and "Pitch Date" (pitch_date) column names
-      const pitchDate = parseDate(story.date_pitched || story.pitch_date);
-      if (pitchDate && linkCount > 0) {
-        // Normalize to YYYY-MM-DD string for consistent matching
-        const dateKey = pitchDate.toISOString().split('T')[0];
-        map.set(dateKey, linkCount);
+      // Use study_title as key (normalized for matching)
+      const title = normalizeTitle(story.study_title);
+      if (title && linkCount > 0) {
+        map.set(title, linkCount);
       }
     });
     return map;
-  }, [studyStoryData]);
+  }, [studyStoryData, normalizeTitle]);
 
-  // Get link count for a story by matching pitch_date
+  // Get link count for a story by matching title
+  // Content Calendar uses story_title, Study Story Data uses study_title
   const getStoryLinkInfo = useCallback((story) => {
-    const pitchDate = parseDate(story.pitch_date);
-    if (!pitchDate) return 0;
-    const dateKey = pitchDate.toISOString().split('T')[0];
-    return storyLinkMap.get(dateKey) || 0;
-  }, [storyLinkMap]);
+    const title = normalizeTitle(story.story_title);
+    if (!title) return 0;
+    return storyLinkMap.get(title) || 0;
+  }, [storyLinkMap, normalizeTitle]);
 
   // Calculate top 3 stories by links for trophy display
   const topStoriesByLinks = useMemo(() => {
