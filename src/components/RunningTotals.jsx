@@ -160,29 +160,37 @@ export default function RunningTotals() {
     });
   }, [contentCalendarData, quarterInfo]);
 
-  // Calculate link statistics from Study Story Data sheet - filter by date in Study Story Data
+  // Calculate link statistics from Study Story Data sheet - match by title to stories in this quarter
   const linkStats = useMemo(() => {
-    // Count links from Study Story Data using Study Link # column
-    // Filter by date directly from Study Story Data (not by title matching)
+    // Build a map of normalized study titles to their link counts and brands
+    const studyLinkMap = new Map();
+    studyStoryData.forEach((story) => {
+      const title = story.study_title?.toLowerCase().trim();
+      if (title) {
+        studyLinkMap.set(title, {
+          linkCount: parseInt(story['study_link_']) || 0,
+          brand: story.brand?.toLowerCase() || '',
+        });
+      }
+    });
+
+    // Count links by matching quarter stories to study data by title
     let lawnstarterLinks = 0;
     let lawnloveLinks = 0;
 
-    studyStoryData.forEach((story) => {
-      // Check if story has a date and if it falls within current quarter
-      // Support both "Date Pitched" (date_pitched) and "Pitch Date" (pitch_date) column names
-      const pitchDate = parseDate(story.date_pitched || story.pitch_date);
-      if (pitchDate && (pitchDate < quarterInfo.start || pitchDate > quarterInfo.end)) {
-        return; // Skip stories outside current quarter
-      }
+    quarterStories.forEach((story) => {
+      const title = story.story_title?.toLowerCase().trim();
+      if (!title) return;
 
-      // Use Study Link # column for link count
-      const linkCount = parseInt(story['study_link_']) || 0;
-      const brand = story.brand?.toLowerCase() || '';
-
-      if (brand.includes('lawnstarter')) {
-        lawnstarterLinks += linkCount;
-      } else if (brand.includes('lawn love')) {
-        lawnloveLinks += linkCount;
+      const studyData = studyLinkMap.get(title);
+      if (studyData && studyData.linkCount > 0) {
+        // Use brand from Content Calendar, fallback to Study data
+        const brand = story.brand?.toLowerCase() || studyData.brand;
+        if (brand.includes('lawnstarter')) {
+          lawnstarterLinks += studyData.linkCount;
+        } else if (brand.includes('lawn love')) {
+          lawnloveLinks += studyData.linkCount;
+        }
       }
     });
 
@@ -191,38 +199,36 @@ export default function RunningTotals() {
       lawnloveLinks,
       totalLinks: lawnstarterLinks + lawnloveLinks,
     };
-  }, [studyStoryData, quarterInfo]);
+  }, [studyStoryData, quarterStories]);
 
-  // Normalize date string to YYYY-MM-DD format for consistent matching
-  const normalizeDate = useCallback((dateStr) => {
-    const parsed = parseDate(dateStr);
-    if (!parsed) return '';
-    // Return ISO date string (YYYY-MM-DD)
-    return parsed.toISOString().split('T')[0];
+  // Normalize title for consistent matching (lowercase, trim whitespace)
+  const normalizeTitle = useCallback((title) => {
+    if (!title) return '';
+    return title.toLowerCase().trim();
   }, []);
 
-  // Create a map of pitch dates to their link counts from Study Story Data
-  // Since each story has a unique pitch date, we can match by date
-  const storyLinkMapByDate = useMemo(() => {
+  // Create a map of study titles to their link counts from Study Story Data
+  // Match by title since Study Pitch Data doesn't have pitch dates
+  const storyLinkMapByTitle = useMemo(() => {
     const map = new Map();
     studyStoryData.forEach((story) => {
       // Use Study Link # column for link count
       const linkCount = parseInt(story['study_link_']) || 0;
-      // Use date as key - support both date_pitched and pitch_date column names
-      const dateKey = normalizeDate(story.date_pitched || story.pitch_date);
-      if (dateKey && linkCount > 0) {
-        map.set(dateKey, linkCount);
+      // Use study_title as key (from Study Pitch Data sheet)
+      const titleKey = normalizeTitle(story.study_title);
+      if (titleKey && linkCount > 0) {
+        map.set(titleKey, linkCount);
       }
     });
     return map;
-  }, [studyStoryData, normalizeDate]);
+  }, [studyStoryData, normalizeTitle]);
 
-  // Get link count for a story by matching pitch date
+  // Get link count for a story by matching title
   const getStoryLinkInfo = useCallback((story) => {
-    const dateKey = normalizeDate(story.pitch_date);
-    if (!dateKey) return 0;
-    return storyLinkMapByDate.get(dateKey) || 0;
-  }, [storyLinkMapByDate, normalizeDate]);
+    const titleKey = normalizeTitle(story.story_title);
+    if (!titleKey) return 0;
+    return storyLinkMapByTitle.get(titleKey) || 0;
+  }, [storyLinkMapByTitle, normalizeTitle]);
 
   // Calculate top 3 stories by links for trophy display
   const topStoriesByLinks = useMemo(() => {
