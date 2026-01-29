@@ -468,7 +468,7 @@ export default function StoryPitchAnalysis() {
       s.brand || '',
       s.linkCount,
       s.performanceScore.toFixed(1),
-      s.date_pitched || '',
+      s.date_pitched || s.pitch_date || '',
       `"${(comments[s.id] || '').replace(/"/g, '""')}"`,
     ]);
 
@@ -801,7 +801,7 @@ export default function StoryPitchAnalysis() {
                       {row.national_c_r || '-'}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.date_pitched || '-'}
+                      {row.date_pitched || row.pitch_date || '-'}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {metricsCache[row.id]?.avgPosition !== undefined
@@ -843,7 +843,7 @@ export default function StoryPitchAnalysis() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Date Pitched</label>
-                  <p className="text-gray-900">{selectedStory.date_pitched || '-'}</p>
+                  <p className="text-gray-900">{selectedStory.date_pitched || selectedStory.pitch_date || '-'}</p>
                 </div>
               </div>
 
