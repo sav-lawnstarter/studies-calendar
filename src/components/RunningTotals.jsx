@@ -160,22 +160,19 @@ export default function RunningTotals() {
     });
   }, [contentCalendarData, quarterInfo]);
 
-  // Calculate link statistics from Study Story Data sheet - only for stories pitched in current quarter
+  // Calculate link statistics from Study Story Data sheet - filter by pitch_date in Study Story Data
   const linkStats = useMemo(() => {
-    // Get normalized titles of stories pitched in this quarter
-    const quarterStoryTitles = new Set(
-      quarterStories.map((s) => (s.story_title || s.news_peg || '').toLowerCase().trim()).filter(Boolean)
-    );
-
-    // Count links from Study Story Data using Study Link # column - only for quarter stories
+    // Count links from Study Story Data using Study Link # column
+    // Filter by pitch_date directly from Study Story Data (not by title matching)
     let lawnstarterLinks = 0;
     let lawnloveLinks = 0;
 
     studyStoryData.forEach((story) => {
-      const title = (story.story_title || story.news_peg || '').toLowerCase().trim();
-
-      // Only count if this story is pitched in the current quarter
-      if (!quarterStoryTitles.has(title)) return;
+      // Check if story has a pitch_date and if it falls within current quarter
+      const pitchDate = parseDate(story.pitch_date);
+      if (pitchDate && (pitchDate < quarterInfo.start || pitchDate > quarterInfo.end)) {
+        return; // Skip stories outside current quarter
+      }
 
       // Use Study Link # column for link count
       const linkCount = parseInt(story['study_link_']) || 0;
@@ -193,7 +190,7 @@ export default function RunningTotals() {
       lawnloveLinks,
       totalLinks: lawnstarterLinks + lawnloveLinks,
     };
-  }, [studyStoryData, quarterStories]);
+  }, [studyStoryData, quarterInfo]);
 
   // Create a map of story titles to their link counts from Study Story Data
   const storyLinkMap = useMemo(() => {
