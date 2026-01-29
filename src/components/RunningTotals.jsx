@@ -1,149 +1,480 @@
-import React from 'react';
-import { BarChart2, TrendingUp, FileText, Users, Calendar } from 'lucide-react';
-import { sampleStories } from '../data/events';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { FileText, Link, Users, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, TrendingUp, Target } from 'lucide-react';
+import { format, subMonths, addMonths } from 'date-fns';
+import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
+
+// Custom quarter definitions (same as ContentCalendar)
+// Q4: Dec 1 - Feb 28/29, Q1: Mar 1 - May 31, Q2: Jun 1 - Aug 31, Q3: Sep 1 - Nov 30
+const getCustomQuarter = (date) => {
+  const month = date.getMonth(); // 0-11
+  const year = date.getFullYear();
+
+  if (month >= 2 && month <= 4) { // Mar-May
+    return { quarter: 1, fiscalYear: year };
+  }
+  if (month >= 5 && month <= 7) { // Jun-Aug
+    return { quarter: 2, fiscalYear: year };
+  }
+  if (month >= 8 && month <= 10) { // Sep-Nov
+    return { quarter: 3, fiscalYear: year };
+  }
+  // Q4: Dec or Jan-Feb
+  if (month === 11) { // December
+    return { quarter: 4, fiscalYear: year };
+  }
+  // Jan-Feb: Q4 of previous fiscal year
+  return { quarter: 4, fiscalYear: year - 1 };
+};
+
+const getCustomQuarterStart = (date) => {
+  const month = date.getMonth();
+  const year = date.getFullYear();
+
+  if (month >= 2 && month <= 4) return new Date(year, 2, 1); // Mar 1
+  if (month >= 5 && month <= 7) return new Date(year, 5, 1); // Jun 1
+  if (month >= 8 && month <= 10) return new Date(year, 8, 1); // Sep 1
+  if (month === 11) return new Date(year, 11, 1); // Dec 1
+  // Jan-Feb: Dec 1 of previous year
+  return new Date(year - 1, 11, 1);
+};
+
+const getCustomQuarterEnd = (date) => {
+  const month = date.getMonth();
+  const year = date.getFullYear();
+
+  if (month >= 2 && month <= 4) return new Date(year, 4, 31); // May 31
+  if (month >= 5 && month <= 7) return new Date(year, 7, 31); // Aug 31
+  if (month >= 8 && month <= 10) return new Date(year, 10, 30); // Nov 30
+  if (month === 11) return new Date(year + 1, 1, 28); // Feb end of next year
+  // Jan-Feb: Feb end of current year
+  return new Date(year, 1, 28);
+};
+
+// Navigate to next/previous quarter
+const getNextQuarterDate = (date) => {
+  const { quarter } = getCustomQuarter(date);
+  if (quarter === 1) return addMonths(date, 3); // Mar -> Jun
+  if (quarter === 2) return addMonths(date, 3); // Jun -> Sep
+  if (quarter === 3) return addMonths(date, 3); // Sep -> Dec
+  return addMonths(date, 3); // Dec -> Mar
+};
+
+const getPrevQuarterDate = (date) => {
+  const { quarter } = getCustomQuarter(date);
+  if (quarter === 1) return subMonths(date, 3); // Mar -> Dec
+  if (quarter === 2) return subMonths(date, 3); // Jun -> Mar
+  if (quarter === 3) return subMonths(date, 3); // Sep -> Jun
+  return subMonths(date, 3); // Dec -> Sep
+};
+
+// Parse date string to Date object
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+
+  // Check if it's already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return new Date(dateStr + 'T00:00:00');
+  }
+
+  // Handle MM/DD/YYYY format
+  const match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+    const [, month, day, year] = match;
+    return new Date(year, parseInt(month) - 1, parseInt(day));
+  }
+
+  return null;
+};
 
 export default function RunningTotals() {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [contentCalendarData, setContentCalendarData] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  // Fetch Content Calendar data
+  const fetchData = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) {
+      if (clientId) {
+        try {
+          await loadGoogleScript();
+          const newToken = await authenticateWithGoogle(clientId);
+          setIsLoading(true);
+          const data = await fetchContentCalendarData(newToken);
+          setContentCalendarData(data);
+          setError(null);
+        } catch (err) {
+          console.error('Auth error:', err);
+          setError('Please sign in via Story & Pitch Analysis to load data.');
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setError('Google Client ID not configured.');
+      }
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await fetchContentCalendarData(token);
+      setContentCalendarData(data);
+    } catch (err) {
+      console.error('Fetch error:', err);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Get current quarter info
+  const quarterInfo = useMemo(() => {
+    const { quarter, fiscalYear } = getCustomQuarter(currentDate);
+    const start = getCustomQuarterStart(currentDate);
+    const end = getCustomQuarterEnd(currentDate);
+    return { quarter, fiscalYear, start, end };
+  }, [currentDate]);
+
+  // Filter stories for current quarter
+  const quarterStories = useMemo(() => {
+    return contentCalendarData.filter((story) => {
+      const pitchDate = parseDate(story.pitch_date);
+      if (!pitchDate) return false;
+      return pitchDate >= quarterInfo.start && pitchDate <= quarterInfo.end;
+    });
+  }, [contentCalendarData, quarterInfo]);
+
   // Calculate statistics
-  const stats = {
-    total: sampleStories.length,
-    published: sampleStories.filter((s) => s.status === 'Published').length,
-    inProgress: sampleStories.filter((s) => s.status === 'In Progress').length,
-    draft: sampleStories.filter((s) => s.status === 'Draft').length,
-    planned: sampleStories.filter((s) => s.status === 'Planned').length,
-  };
+  const stats = useMemo(() => {
+    // Total stories pitched (have a pitch date in this quarter)
+    const totalStories = quarterStories.length;
 
-  const totalWords = sampleStories.reduce((acc, s) => acc + (s.metrics?.currentWords || 0), 0);
-  const targetWords = sampleStories.reduce((acc, s) => acc + (s.metrics?.targetWords || 0), 0);
+    // Pitched stories (status is "Pitched" or similar)
+    const pitchedStories = quarterStories.filter((s) =>
+      s.status?.toLowerCase() === 'pitched' ||
+      s.status?.toLowerCase() === 'published' ||
+      s.status?.toLowerCase() === 'complete'
+    ).length;
 
-  const byAssignee = sampleStories.reduce((acc, story) => {
-    acc[story.assignee] = (acc[story.assignee] || 0) + 1;
-    return acc;
-  }, {});
+    // Remaining stories due (not yet pitched)
+    const remainingStories = totalStories - pitchedStories;
 
-  const byPriority = sampleStories.reduce((acc, story) => {
-    acc[story.priority] = (acc[story.priority] || 0) + 1;
-    return acc;
-  }, {});
+    // LawnStarter stories (links)
+    const lawnstarterStories = quarterStories.filter((s) =>
+      s.brand?.toLowerCase().includes('lawnstarter')
+    );
+    const lawnstarterLinks = lawnstarterStories.filter((s) =>
+      s.status?.toLowerCase() === 'pitched' ||
+      s.status?.toLowerCase() === 'published' ||
+      s.status?.toLowerCase() === 'complete'
+    ).length;
+
+    // Lawn Love stories (links)
+    const lawnloveStories = quarterStories.filter((s) =>
+      s.brand?.toLowerCase().includes('lawn love')
+    );
+    const lawnloveLinks = lawnloveStories.filter((s) =>
+      s.status?.toLowerCase() === 'pitched' ||
+      s.status?.toLowerCase() === 'published' ||
+      s.status?.toLowerCase() === 'complete'
+    ).length;
+
+    // Total links
+    const totalLinks = lawnstarterLinks + lawnloveLinks;
+
+    // Experts contacted and responded
+    let totalExpertsContacted = 0;
+    let totalExpertsResponded = 0;
+
+    quarterStories.forEach((story) => {
+      // Parse experts contacted (might be a number or string)
+      const contacted = parseInt(story._experts_contacted) || 0;
+      totalExpertsContacted += contacted;
+
+      // For experts responded, check if there's a field or estimate from notes
+      // If there's a specific field, use it; otherwise we'll show just contacted
+      const responded = parseInt(story.experts_responded) || 0;
+      totalExpertsResponded += responded;
+    });
+
+    return {
+      totalStories,
+      pitchedStories,
+      remainingStories,
+      lawnstarterTotal: lawnstarterStories.length,
+      lawnstarterLinks,
+      lawnloveTotal: lawnloveStories.length,
+      lawnloveLinks,
+      totalLinks,
+      totalExpertsContacted,
+      totalExpertsResponded,
+    };
+  }, [quarterStories]);
+
+  // Navigation
+  const navigatePrev = () => setCurrentDate(getPrevQuarterDate(currentDate));
+  const navigateNext = () => setCurrentDate(getNextQuarterDate(currentDate));
+  const goToCurrentQuarter = () => setCurrentDate(new Date());
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Running Totals</h1>
-
-      {/* Overview Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-ls-green-lighter rounded-lg">
-              <FileText size={20} className="text-ls-green" />
+    <div className="h-full flex flex-col bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-gray-900">Running Totals</h1>
+            <button
+              onClick={goToCurrentQuarter}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Current Quarter
+            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={navigatePrev}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronLeft size={20} className="text-gray-600" />
+              </button>
+              <button
+                onClick={navigateNext}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronRight size={20} className="text-gray-600" />
+              </button>
             </div>
-            <span className="text-sm text-gray-500">Total Stories</span>
-          </div>
-          <p className="text-3xl font-bold text-gray-900">{stats.total}</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <TrendingUp size={20} className="text-green-600" />
+            <div className="text-lg font-semibold text-gray-700">
+              Q{quarterInfo.quarter} {quarterInfo.fiscalYear}
             </div>
-            <span className="text-sm text-gray-500">Published</span>
-          </div>
-          <p className="text-3xl font-bold text-green-600">{stats.published}</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <BarChart2 size={20} className="text-ls-orange" />
+            <div className="text-sm text-gray-500">
+              ({format(quarterInfo.start, 'MMM d')} - {format(quarterInfo.end, 'MMM d, yyyy')})
             </div>
-            <span className="text-sm text-gray-500">In Progress</span>
           </div>
-          <p className="text-3xl font-bold text-ls-orange">{stats.inProgress}</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <FileText size={20} className="text-yellow-600" />
-            </div>
-            <span className="text-sm text-gray-500">Draft</span>
-          </div>
-          <p className="text-3xl font-bold text-yellow-600">{stats.draft}</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Calendar size={20} className="text-gray-600" />
-            </div>
-            <span className="text-sm text-gray-500">Planned</span>
-          </div>
-          <p className="text-3xl font-bold text-gray-600">{stats.planned}</p>
+          <button
+            onClick={fetchData}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
         </div>
       </div>
 
-      {/* Detailed Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Word Count Progress */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Word Count Progress</h3>
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-gray-500">Total Progress</span>
-              <span className="font-medium">{Math.round((totalWords / targetWords) * 100)}%</span>
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-6">
+        {error ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-700 mb-6">
+            {error}
+          </div>
+        ) : null}
+
+        {/* Overview Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-ls-green-lighter rounded-lg">
+                <FileText size={20} className="text-ls-green" />
+              </div>
+              <span className="text-sm text-gray-500">Total Stories</span>
             </div>
-            <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+            <p className="text-4xl font-bold text-gray-900">{stats.totalStories}</p>
+            <p className="text-sm text-gray-500 mt-1">Scheduled this quarter</p>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <TrendingUp size={20} className="text-green-600" />
+              </div>
+              <span className="text-sm text-gray-500">Pitched</span>
+            </div>
+            <p className="text-4xl font-bold text-green-600">{stats.pitchedStories}</p>
+            <p className="text-sm text-gray-500 mt-1">Stories completed</p>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <Target size={20} className="text-amber-600" />
+              </div>
+              <span className="text-sm text-gray-500">Remaining Stories Due</span>
+            </div>
+            <p className="text-4xl font-bold text-amber-600">{stats.remainingStories}</p>
+            <p className="text-sm text-gray-500 mt-1">Still to complete</p>
+          </div>
+        </div>
+
+        {/* Links by Brand */}
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Links by Brand</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <div className="flex items-center gap-3 mb-4">
               <div
-                className="h-full bg-ls-green rounded-full"
-                style={{ width: `${(totalWords / targetWords) * 100}%` }}
+                className="w-4 h-4 rounded-full"
+                style={{ backgroundColor: '#069C55' }}
+              />
+              <span className="font-semibold text-gray-900">LawnStarter</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link size={20} className="text-ls-green" />
+              <p className="text-4xl font-bold text-ls-green">{stats.lawnstarterLinks}</p>
+            </div>
+            <p className="text-sm text-gray-500 mt-2">
+              of {stats.lawnstarterTotal} stories
+            </p>
+            <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-ls-green rounded-full transition-all"
+                style={{ width: stats.lawnstarterTotal > 0 ? `${(stats.lawnstarterLinks / stats.lawnstarterTotal) * 100}%` : '0%' }}
               />
             </div>
           </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">{totalWords.toLocaleString()}</p>
-            <p className="text-sm text-gray-500">of {targetWords.toLocaleString()} words</p>
+
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="w-4 h-4 rounded-full"
+                style={{ backgroundColor: '#246227' }}
+              />
+              <span className="font-semibold text-gray-900">Lawn Love</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link size={20} className="text-green-800" />
+              <p className="text-4xl font-bold text-green-800">{stats.lawnloveLinks}</p>
+            </div>
+            <p className="text-sm text-gray-500 mt-2">
+              of {stats.lawnloveTotal} stories
+            </p>
+            <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-800 rounded-full transition-all"
+                style={{ width: stats.lawnloveTotal > 0 ? `${(stats.lawnloveLinks / stats.lawnloveTotal) * 100}%` : '0%' }}
+              />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-6 bg-gradient-to-br from-ls-green-lighter to-white">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="font-semibold text-gray-900">Total Links</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link size={24} className="text-ls-green" />
+              <p className="text-5xl font-bold text-ls-green">{stats.totalLinks}</p>
+            </div>
+            <p className="text-sm text-gray-500 mt-2">
+              Combined across both brands
+            </p>
           </div>
         </div>
 
-        {/* By Assignee */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Stories by Assignee</h3>
-          <div className="space-y-3">
-            {Object.entries(byAssignee).map(([name, count]) => (
-              <div key={name} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-ls-green-lighter rounded-full flex items-center justify-center">
-                    <Users size={14} className="text-ls-green" />
-                  </div>
-                  <span className="text-gray-700">{name}</span>
-                </div>
-                <span className="font-semibold text-gray-900">{count}</span>
+        {/* Expert Outreach */}
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Expert Outreach</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Users size={20} className="text-blue-600" />
               </div>
-            ))}
+              <span className="text-sm text-gray-500">Experts Contacted</span>
+            </div>
+            <p className="text-4xl font-bold text-blue-600">{stats.totalExpertsContacted}</p>
+            <p className="text-sm text-gray-500 mt-1">Total outreach this quarter</p>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <MessageSquare size={20} className="text-purple-600" />
+              </div>
+              <span className="text-sm text-gray-500">Experts Responded</span>
+            </div>
+            <p className="text-4xl font-bold text-purple-600">{stats.totalExpertsResponded}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {stats.totalExpertsContacted > 0
+                ? `${Math.round((stats.totalExpertsResponded / stats.totalExpertsContacted) * 100)}% response rate`
+                : 'No outreach recorded'
+              }
+            </p>
           </div>
         </div>
 
-        {/* By Priority */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Stories by Priority</h3>
-          <div className="space-y-3">
-            {Object.entries(byPriority).map(([priority, count]) => {
-              const colors = {
-                High: 'bg-red-100 text-red-600',
-                Medium: 'bg-orange-100 text-ls-orange',
-                Low: 'bg-gray-100 text-gray-600',
-              };
-              return (
-                <div key={priority} className="flex items-center justify-between">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${colors[priority]}`}>
-                    {priority}
-                  </span>
-                  <span className="font-semibold text-gray-900">{count}</span>
-                </div>
-              );
-            })}
+        {/* Quarter Stories List */}
+        {quarterStories.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Stories This Quarter</h2>
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700">Story</th>
+                    <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700">Brand</th>
+                    <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700">Pitch Date</th>
+                    <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700">Status</th>
+                    <th className="text-center px-4 py-3 text-sm font-semibold text-gray-700">Experts</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {quarterStories.map((story) => {
+                    const pitchDate = parseDate(story.pitch_date);
+                    return (
+                      <tr key={story.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-900">{story.story_title || story.news_peg || 'Untitled'}</div>
+                          {story.news_peg && story.story_title && (
+                            <div className="text-sm text-gray-500">{story.news_peg}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {story.brand && (
+                            <span
+                              className="inline-block px-2 py-1 rounded-full text-xs font-medium text-white"
+                              style={{
+                                backgroundColor: story.brand?.toLowerCase().includes('lawn love')
+                                  ? '#246227'
+                                  : story.brand?.toLowerCase().includes('lawnstarter')
+                                    ? '#069C55'
+                                    : '#6b7280'
+                              }}
+                            >
+                              {story.brand}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {pitchDate ? format(pitchDate, 'MMM d, yyyy') : '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                              story.status?.toLowerCase() === 'pitched' || story.status?.toLowerCase() === 'published'
+                                ? 'bg-green-100 text-green-700'
+                                : story.status?.toLowerCase() === 'in progress'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {story.status || 'Pending'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center text-sm text-gray-600">
+                          {story._experts_contacted || '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
