@@ -160,6 +160,20 @@ export default function RunningTotals() {
     });
   }, [contentCalendarData, quarterInfo]);
 
+  // Helper function to get link count from a story, supporting multiple column names
+  const getLinkCount = useCallback((story) => {
+    // Support multiple possible column names for link count
+    // "Study Link #" -> study_link_, "Study Links #" -> study_links_, "Links" -> links, etc.
+    const linkValue = story['study_link_'] || story['study_links_'] || story['links'] || story['link_count'] || story['link_'] || '0';
+    return parseInt(linkValue) || 0;
+  }, []);
+
+  // Helper function to normalize title for matching
+  const normalizeTitle = useCallback((title) => {
+    if (!title) return '';
+    return title.toLowerCase().trim().replace(/\s+/g, ' ');
+  }, []);
+
   // Calculate link statistics from Study Story Data sheet - filter by date in Study Story Data
   const linkStats = useMemo(() => {
     // Count links from Study Story Data using Study Link # column
@@ -175,8 +189,8 @@ export default function RunningTotals() {
         return; // Skip stories outside current quarter
       }
 
-      // Use Study Link # column for link count
-      const linkCount = parseInt(story['study_link_']) || 0;
+      // Use helper to get link count (supports multiple column names)
+      const linkCount = getLinkCount(story);
       const brand = story.brand?.toLowerCase() || '';
 
       if (brand.includes('lawnstarter')) {
@@ -191,7 +205,7 @@ export default function RunningTotals() {
       lawnloveLinks,
       totalLinks: lawnstarterLinks + lawnloveLinks,
     };
-  }, [studyStoryData, quarterInfo]);
+  }, [studyStoryData, quarterInfo, getLinkCount]);
 
   // Normalize date string to YYYY-MM-DD format for consistent matching
   const normalizeDate = useCallback((dateStr) => {
@@ -201,28 +215,51 @@ export default function RunningTotals() {
     return parsed.toISOString().split('T')[0];
   }, []);
 
-  // Create a map of pitch dates to their link counts from Study Story Data
-  // Since each story has a unique pitch date, we can match by date
-  const storyLinkMapByDate = useMemo(() => {
-    const map = new Map();
+  // Create maps for matching stories by title and by date
+  // Title matching is more reliable across different sheets
+  const storyLinkMaps = useMemo(() => {
+    const byTitle = new Map();
+    const byDate = new Map();
+
     studyStoryData.forEach((story) => {
-      // Use Study Link # column for link count
-      const linkCount = parseInt(story['study_link_']) || 0;
-      // Use date as key - support both date_pitched and pitch_date column names
+      // Use helper to get link count (supports multiple column names)
+      const linkCount = getLinkCount(story);
+
+      // Add to title map - Study Story Data uses "study_title" or "story_title"
+      const title = normalizeTitle(story.study_title || story.story_title || story.title);
+      if (title && linkCount > 0) {
+        byTitle.set(title, linkCount);
+      }
+
+      // Also add to date map as fallback - support both date_pitched and pitch_date column names
       const dateKey = normalizeDate(story.date_pitched || story.pitch_date);
       if (dateKey && linkCount > 0) {
-        map.set(dateKey, linkCount);
+        byDate.set(dateKey, linkCount);
       }
     });
-    return map;
-  }, [studyStoryData, normalizeDate]);
 
-  // Get link count for a story by matching pitch date
+    return { byTitle, byDate };
+  }, [studyStoryData, normalizeDate, normalizeTitle, getLinkCount]);
+
+  // Get link count for a story by matching title first, then falling back to date
   const getStoryLinkInfo = useCallback((story) => {
-    const dateKey = normalizeDate(story.pitch_date);
-    if (!dateKey) return 0;
-    return storyLinkMapByDate.get(dateKey) || 0;
-  }, [storyLinkMapByDate, normalizeDate]);
+    // Try to match by title first (more reliable across sheets)
+    const title = normalizeTitle(story.story_title || story.title);
+    if (title) {
+      const linksByTitle = storyLinkMaps.byTitle.get(title);
+      if (linksByTitle !== undefined) {
+        return linksByTitle;
+      }
+    }
+
+    // Fall back to date matching
+    const dateKey = normalizeDate(story.pitch_date || story.date_pitched);
+    if (dateKey) {
+      return storyLinkMaps.byDate.get(dateKey) || 0;
+    }
+
+    return 0;
+  }, [storyLinkMaps, normalizeDate, normalizeTitle]);
 
   // Calculate top 3 stories by links for trophy display
   const topStoriesByLinks = useMemo(() => {
