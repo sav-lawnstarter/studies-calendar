@@ -160,13 +160,23 @@ export default function RunningTotals() {
     });
   }, [contentCalendarData, quarterInfo]);
 
-  // Calculate link statistics from Study Story Data sheet
+  // Calculate link statistics from Study Story Data sheet - only for stories pitched in current quarter
   const linkStats = useMemo(() => {
-    // Count links from Study Story Data using Study Link # column
+    // Get normalized titles of stories pitched in this quarter
+    const quarterStoryTitles = new Set(
+      quarterStories.map((s) => (s.story_title || s.news_peg || '').toLowerCase().trim()).filter(Boolean)
+    );
+
+    // Count links from Study Story Data using Study Link # column - only for quarter stories
     let lawnstarterLinks = 0;
     let lawnloveLinks = 0;
 
     studyStoryData.forEach((story) => {
+      const title = (story.story_title || story.news_peg || '').toLowerCase().trim();
+
+      // Only count if this story is pitched in the current quarter
+      if (!quarterStoryTitles.has(title)) return;
+
       // Use Study Link # column for link count
       const linkCount = parseInt(story['study_link_']) || 0;
       const brand = story.brand?.toLowerCase() || '';
@@ -183,7 +193,7 @@ export default function RunningTotals() {
       lawnloveLinks,
       totalLinks: lawnstarterLinks + lawnloveLinks,
     };
-  }, [studyStoryData]);
+  }, [studyStoryData, quarterStories]);
 
   // Create a map of story titles to their link counts from Study Story Data
   const storyLinkMap = useMemo(() => {
@@ -277,9 +287,8 @@ export default function RunningTotals() {
       const contacted = parseInt(story._experts_contacted) || 0;
       totalExpertsContacted += contacted;
 
-      // For experts responded, check if there's a field or estimate from notes
-      // If there's a specific field, use it; otherwise we'll show just contacted
-      const responded = parseInt(story.experts_responded) || 0;
+      // Use # Expert Responses column (column J) for experts responded
+      const responded = parseInt(story._expert_responses) || 0;
       totalExpertsResponded += responded;
     });
 
@@ -390,7 +399,7 @@ export default function RunningTotals() {
 
         {/* Links by Brand (from Study Story Data sheet) */}
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Links by Brand</h2>
-        <p className="text-sm text-gray-500 mb-4">Total links from Study Story Data sheet</p>
+        <p className="text-sm text-gray-500 mb-4">Links from stories pitched this quarter</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -538,7 +547,7 @@ export default function RunningTotals() {
                           {linkCount > 0 ? linkCount : '-'}
                         </td>
                         <td className="px-4 py-3 text-center text-sm text-gray-600">
-                          {story._experts_contacted || '-'}
+                          {story._expert_responses || '-'}
                         </td>
                       </tr>
                     );
