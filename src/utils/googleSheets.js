@@ -92,7 +92,7 @@ export const authenticateWithGoogle = (clientId) => {
 
 // Fetch data from Study Story Data sheet (for Story & Pitch Analysis)
 export const fetchSheetData = async (accessToken) => {
-  const range = `${STUDY_SHEET_NAME}!A:L`;
+  const range = `${STUDY_SHEET_NAME}!A:Z`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${STUDY_SPREADSHEET_ID}/values/${encodeURIComponent(range)}`;
 
   const response = await fetch(url, {
