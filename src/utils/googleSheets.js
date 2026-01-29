@@ -157,7 +157,8 @@ const convertDateFormat = (dateStr) => {
 };
 
 // Fields that should be treated as dates
-const DATE_FIELDS = ['pitch_date', 'analysis_due_by', 'edits_due_by', 'qa_due_by', 'production_date'];
+// Note: 'pitch_date' is used by Content Calendar, 'date_pitched' is used by Study Story Data
+const DATE_FIELDS = ['pitch_date', 'date_pitched', 'analysis_due_by', 'edits_due_by', 'qa_due_by', 'production_date'];
 
 // Parse Content Calendar data into structured objects
 const parseContentCalendarData = (values) => {
@@ -185,7 +186,7 @@ const parseContentCalendarData = (values) => {
   });
 };
 
-// Parse sheet data into structured objects
+// Parse sheet data into structured objects (Study Story Data)
 const parseSheetData = (values) => {
   if (!values || values.length < 2) {
     return [];
@@ -198,7 +199,14 @@ const parseSheetData = (values) => {
     const item = { id: index };
     headers.forEach((header, colIndex) => {
       const key = header.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
-      item[key] = row[colIndex] || '';
+      let value = row[colIndex] || '';
+
+      // Convert date fields to ISO format for consistent matching
+      if (DATE_FIELDS.includes(key) && value) {
+        value = convertDateFormat(value);
+      }
+
+      item[key] = value;
     });
     return item;
   });
