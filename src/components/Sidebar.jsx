@@ -5,10 +5,10 @@ const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
   { id: 'due-this-week', label: 'Due This Week', icon: Clock },
   { id: 'running-totals', label: 'Running Totals', icon: BarChart3 },
-  { id: 'story-archive', label: 'Story Archive', icon: Archive },
-  { id: 'story-ideation', label: 'Story Ideation', icon: Lightbulb },
   { id: 'story-pitch-analysis', label: 'Story & Pitch Analysis', icon: PieChart },
   { id: 'competitor-log', label: 'Competitor Log', icon: FileText },
+  { id: 'story-ideation', label: 'Story Ideation', icon: Lightbulb },
+  { id: 'story-archive', label: 'Story Archive', icon: Archive },
 ];
 
 export default function Sidebar({ activeView, setActiveView }) {
