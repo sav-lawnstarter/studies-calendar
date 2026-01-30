@@ -308,6 +308,7 @@ export default function ContentCalendar() {
           qaDueBy: story.qa_due_by,
           productionDate: story.production_date,
           expertsContacted: story._experts_contacted,
+          expertResponses: story._expert_responses,
           notes: story.notes,
           status: story.status,
           studyUrl: story.study_url,
@@ -1204,10 +1205,10 @@ export default function ContentCalendar() {
                       <p className="text-gray-900">{selectedEvent.productionDate}</p>
                     </div>
                   )}
-                  {selectedEvent.expertsContacted && (
+                  {selectedEvent.expertResponses && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1"># Expert Responses</label>
-                      <p className="text-gray-900">{selectedEvent.expertsContacted}</p>
+                      <p className="text-gray-900">{selectedEvent.expertResponses}</p>
                     </div>
                   )}
                   {selectedEvent.status && (
