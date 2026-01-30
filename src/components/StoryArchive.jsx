@@ -30,6 +30,7 @@ import {
   getStoredToken,
   authenticateWithGoogle,
   fetchSheetData,
+  fetchContentCalendarData,
 } from '../utils/googleSheets';
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -43,14 +44,19 @@ export default function StoryArchive() {
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
 
-  // Google Sheets data
+  // Google Sheets data (Study Story Data for metrics)
   const [sheetData, setSheetData] = useState([]);
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
+
+  // Content Calendar data (to show which studies are already scheduled)
+  const [contentCalendarData, setContentCalendarData] = useState([]);
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
 
   // UI state
   const [searchQuery, setSearchQuery] = useState('');
   const [brandFilter, setBrandFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
+  const [calendarFilter, setCalendarFilter] = useState('All'); // 'All', 'In Calendar', 'Not in Calendar'
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [selectedStudy, setSelectedStudy] = useState(null);
@@ -69,7 +75,7 @@ export default function StoryArchive() {
     }
   }, []);
 
-  // Load Google Sheet data for matching
+  // Load Google Sheet data for matching (both Study Story Data and Content Calendar)
   const loadSheetData = useCallback(async () => {
     let token = getStoredToken();
 
@@ -83,13 +89,28 @@ export default function StoryArchive() {
     }
 
     setIsLoadingSheet(true);
+    setIsLoadingCalendar(true);
+
+    // Fetch both sheets in parallel
     try {
-      const data = await fetchSheetData(token);
-      setSheetData(data);
+      const [studyData, calendarData] = await Promise.all([
+        fetchSheetData(token).catch(err => {
+          console.error('Error loading study sheet data:', err);
+          return [];
+        }),
+        fetchContentCalendarData(token).catch(err => {
+          console.error('Error loading content calendar data:', err);
+          return [];
+        }),
+      ]);
+
+      setSheetData(studyData);
+      setContentCalendarData(calendarData);
     } catch (err) {
       console.error('Error loading sheet data:', err);
     } finally {
       setIsLoadingSheet(false);
+      setIsLoadingCalendar(false);
     }
   }, []);
 
@@ -98,11 +119,51 @@ export default function StoryArchive() {
     loadSheetData();
   }, [loadSheetData]);
 
-  // Match studies with sheet data when either changes
+  // Helper to normalize URLs for comparison
+  const normalizeUrl = (url) => {
+    if (!url) return '';
+    return url.toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/\/$/, '');
+  };
+
+  // Match studies with sheet data and content calendar when either changes
   const matchedStudies = useMemo(() => {
     if (studies.length === 0) return [];
-    return matchStudiesWithSheetData(studies, sheetData);
-  }, [studies, sheetData]);
+
+    // First match with Study Story Data for metrics
+    const withMetrics = matchStudiesWithSheetData(studies, sheetData);
+
+    // Then match with Content Calendar to see which are scheduled
+    return withMetrics.map(study => {
+      const normalizedStudyUrl = normalizeUrl(study.url);
+
+      // Find matching entry in Content Calendar by URL
+      const calendarEntry = contentCalendarData.find(entry => {
+        const normalizedCalendarUrl = normalizeUrl(entry.study_url);
+        return normalizedCalendarUrl && normalizedStudyUrl &&
+          (normalizedCalendarUrl.includes(normalizedStudyUrl) ||
+           normalizedStudyUrl.includes(normalizedCalendarUrl));
+      });
+
+      if (calendarEntry) {
+        return {
+          ...study,
+          inContentCalendar: true,
+          calendarEntry: {
+            storyTitle: calendarEntry.story_title,
+            brand: calendarEntry.brand,
+            pitchDate: calendarEntry.pitch_date,
+            status: calendarEntry.status,
+            productionDate: calendarEntry.production_date,
+          },
+        };
+      }
+
+      return { ...study, inContentCalendar: false };
+    });
+  }, [studies, sheetData, contentCalendarData]);
 
   // Filter and sort studies
   const filteredStudies = useMemo(() => {
@@ -130,6 +191,13 @@ export default function StoryArchive() {
         const year = extractYear(study.publishDate);
         return year === parseInt(yearFilter);
       });
+    }
+
+    // Calendar filter
+    if (calendarFilter === 'In Calendar') {
+      result = result.filter((study) => study.inContentCalendar);
+    } else if (calendarFilter === 'Not in Calendar') {
+      result = result.filter((study) => !study.inContentCalendar);
     }
 
     // Sort
@@ -169,7 +237,7 @@ export default function StoryArchive() {
     }
 
     return result;
-  }, [matchedStudies, searchQuery, brandFilter, yearFilter, sortBy]);
+  }, [matchedStudies, searchQuery, brandFilter, yearFilter, calendarFilter, sortBy]);
 
   // Refresh archive (re-scrape category pages)
   const handleRefresh = async () => {
@@ -269,8 +337,13 @@ export default function StoryArchive() {
 
       {/* Content */}
       <div className="p-4">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <BrandBadge brand={study.brand} />
+          {study.inContentCalendar && (
+            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-ls-green text-white">
+              In Calendar
+            </span>
+          )}
           {study.hasSheetData && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
               Has Metrics
@@ -380,6 +453,15 @@ export default function StoryArchive() {
         {formatDate(study.publishDate)}
       </td>
       <td className="px-4 py-3">
+        {study.inContentCalendar ? (
+          <span className="px-2 py-1 rounded-full text-xs font-medium bg-ls-green text-white">
+            In Calendar
+          </span>
+        ) : (
+          <span className="text-sm text-gray-400">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
         {study.studyLinkNumber ? (
           <span className="text-sm font-medium text-gray-900">
             {study.studyLinkNumber}
@@ -456,8 +538,13 @@ export default function StoryArchive() {
           <div className="bg-ls-green p-6 text-white">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <BrandBadge brand={selectedStudy.brand} />
+                  {selectedStudy.inContentCalendar && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-white text-ls-green">
+                      In Calendar
+                    </span>
+                  )}
                   {selectedStudy.hasSheetData && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-white/20 text-white">
                       Has Metrics
@@ -502,6 +589,62 @@ export default function StoryArchive() {
                 <p className="text-gray-700">{selectedStudy.excerpt}</p>
               </div>
             )}
+
+            {/* Content Calendar Status */}
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                Content Calendar
+              </h3>
+              {selectedStudy.inContentCalendar ? (
+                <div className="bg-ls-green-lighter rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Calendar size={18} className="text-ls-green" />
+                    <span className="font-medium text-ls-green">This study is in the Content Calendar</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    {selectedStudy.calendarEntry?.storyTitle && (
+                      <div>
+                        <span className="text-gray-500">Story Title:</span>
+                        <p className="font-medium text-gray-900">{selectedStudy.calendarEntry.storyTitle}</p>
+                      </div>
+                    )}
+                    {selectedStudy.calendarEntry?.pitchDate && (
+                      <div>
+                        <span className="text-gray-500">Pitch Date:</span>
+                        <p className="font-medium text-gray-900">{formatDate(selectedStudy.calendarEntry.pitchDate)}</p>
+                      </div>
+                    )}
+                    {selectedStudy.calendarEntry?.status && (
+                      <div>
+                        <span className="text-gray-500">Status:</span>
+                        <p className="font-medium text-gray-900">{selectedStudy.calendarEntry.status}</p>
+                      </div>
+                    )}
+                    {selectedStudy.calendarEntry?.productionDate && (
+                      <div>
+                        <span className="text-gray-500">Production Date:</span>
+                        <p className="font-medium text-gray-900">{formatDate(selectedStudy.calendarEntry.productionDate)}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4 text-center">
+                  <p className="text-gray-500 mb-3">
+                    This study is not yet in the Content Calendar.
+                  </p>
+                  <a
+                    href="https://docs.google.com/spreadsheets/d/1ELXVk6Zu9U3ISiv7zQM0rf9GCi_v2OrRzNat9cKGw7M/edit"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
+                  >
+                    <ExternalLink size={16} />
+                    Add to Content Calendar
+                  </a>
+                </div>
+              )}
+            </div>
 
             {/* Performance Data */}
             {selectedStudy.hasSheetData ? (
@@ -681,14 +824,25 @@ export default function StoryArchive() {
             Last updated: {formatTimestamp(lastUpdated)}
           </p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-          {isLoading ? 'Refreshing...' : 'Refresh Archive'}
-        </button>
+        <div className="flex items-center gap-3">
+          <a
+            href="https://docs.google.com/spreadsheets/d/1ELXVk6Zu9U3ISiv7zQM0rf9GCi_v2OrRzNat9cKGw7M/edit"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2 border border-ls-green text-ls-green rounded-lg hover:bg-ls-green-lighter transition-colors"
+          >
+            <ExternalLink size={18} />
+            Open Content Calendar
+          </a>
+          <button
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+            {isLoading ? 'Refreshing...' : 'Refresh Archive'}
+          </button>
+        </div>
       </div>
 
       {/* Loading message */}
@@ -782,6 +936,23 @@ export default function StoryArchive() {
             />
           </div>
 
+          {/* Calendar Filter */}
+          <div className="relative">
+            <select
+              value={calendarFilter}
+              onChange={(e) => setCalendarFilter(e.target.value)}
+              className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-ls-green focus:border-transparent"
+            >
+              <option value="All">All Studies</option>
+              <option value="In Calendar">In Calendar</option>
+              <option value="Not in Calendar">Not in Calendar</option>
+            </select>
+            <ChevronDown
+              size={16}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+            />
+          </div>
+
           {/* Sort */}
           <div className="relative">
             <select
@@ -828,12 +999,20 @@ export default function StoryArchive() {
         </div>
 
         {/* Results count */}
-        <div className="mt-3 text-sm text-gray-500">
-          Showing {filteredStudies.length} of {matchedStudies.length} studies
-          {isLoadingSheet && (
-            <span className="ml-2 text-blue-600">
+        <div className="mt-3 text-sm text-gray-500 flex items-center gap-4">
+          <span>
+            Showing {filteredStudies.length} of {matchedStudies.length} studies
+            {matchedStudies.filter(s => s.inContentCalendar).length > 0 && (
+              <span className="ml-1 text-ls-green">
+                ({matchedStudies.filter(s => s.inContentCalendar).length} in calendar)
+              </span>
+            )}
+          </span>
+          {(isLoadingSheet || isLoadingCalendar) && (
+            <span className="text-blue-600">
               <Loader2 size={12} className="inline animate-spin mr-1" />
-              Loading metrics...
+              {isLoadingSheet && isLoadingCalendar ? 'Loading data...' :
+               isLoadingSheet ? 'Loading metrics...' : 'Loading calendar...'}
             </span>
           )}
         </div>
@@ -876,6 +1055,7 @@ export default function StoryArchive() {
               setSearchQuery('');
               setBrandFilter('All');
               setYearFilter('All');
+              setCalendarFilter('All');
             }}
             className="text-ls-green hover:text-ls-green-light font-medium"
           >
@@ -907,6 +1087,11 @@ export default function StoryArchive() {
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">
                   Published
+                </th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <Calendar size={14} /> Calendar
+                  </span>
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">
                   <span className="flex items-center gap-1">
