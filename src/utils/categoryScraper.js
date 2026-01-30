@@ -6,8 +6,15 @@ const CATEGORY_URLS = {
   lawnlove: 'https://lawnlove.com/blog/category/studies/',
 };
 
-// CORS proxy for client-side fetching
-const CORS_PROXY = 'https://corsproxy.io/?';
+// CORS proxy for client-side fetching - try multiple proxies for reliability
+const CORS_PROXIES = [
+  'https://corsproxy.io/?',
+  'https://api.allorigins.win/raw?url=',
+  'https://cors-anywhere.herokuapp.com/',
+];
+
+// Currently selected proxy (will rotate on failure)
+let currentProxyIndex = 0;
 
 // Storage key for cached archive data
 const ARCHIVE_STORAGE_KEY = 'story-archive-data';
@@ -293,37 +300,101 @@ const parseLawnLovePage = (html, pageUrl) => {
   return studies;
 };
 
-// Fetch and parse multiple pages for pagination
-const fetchAllPages = async (baseUrl, brand, parseFunction) => {
-  const allStudies = [];
-  const seenUrls = new Set();
-  let page = 1;
-  const maxPages = 10; // Limit to prevent infinite loops
+// Check if the response HTML is a proxy error page
+const isProxyErrorResponse = (html) => {
+  const lowerHtml = html.toLowerCase();
+  // Common error patterns from CORS proxies
+  return (
+    lowerHtml.includes('access denied') ||
+    lowerHtml.includes('rate limit') ||
+    lowerHtml.includes('too many requests') ||
+    lowerHtml.includes('403 forbidden') ||
+    lowerHtml.includes('429 too many') ||
+    lowerHtml.includes('blocked') ||
+    lowerHtml.includes('captcha') ||
+    lowerHtml.includes('cloudflare') ||
+    (lowerHtml.includes('error') && html.length < 2000) ||
+    // Check if it's clearly not a blog page
+    (!lowerHtml.includes('blog') && !lowerHtml.includes('article') && html.length < 5000)
+  );
+};
 
-  while (page <= maxPages) {
+// Try to fetch with different proxies
+const fetchWithProxy = async (targetUrl) => {
+  const errors = [];
+
+  for (let i = 0; i < CORS_PROXIES.length; i++) {
+    const proxyIndex = (currentProxyIndex + i) % CORS_PROXIES.length;
+    const proxy = CORS_PROXIES[proxyIndex];
+    const proxyUrl = `${proxy}${encodeURIComponent(targetUrl)}`;
+
     try {
-      const pageUrl = page === 1 ? baseUrl : `${baseUrl}page/${page}/`;
-      const proxyUrl = `${CORS_PROXY}${encodeURIComponent(pageUrl)}`;
-
       const response = await fetch(proxyUrl, {
         headers: {
           'Accept': 'text/html',
+          'Origin': window.location.origin,
         },
       });
 
       if (!response.ok) {
-        // No more pages
-        break;
+        errors.push(`${proxy}: HTTP ${response.status}`);
+        continue;
       }
 
       const html = await response.text();
 
-      // Check if page has content
-      if (!html || html.length < 1000) {
-        break;
+      // Check if the proxy returned an error page instead of actual content
+      if (isProxyErrorResponse(html)) {
+        errors.push(`${proxy}: Proxy returned error/blocked page`);
+        continue;
+      }
+
+      // Check for minimum content length
+      if (!html || html.length < 500) {
+        errors.push(`${proxy}: Response too short (${html?.length || 0} bytes)`);
+        continue;
+      }
+
+      // Success - remember this proxy for future requests
+      currentProxyIndex = proxyIndex;
+      return { html, proxyUsed: proxy };
+
+    } catch (error) {
+      errors.push(`${proxy}: ${error.message}`);
+    }
+  }
+
+  // All proxies failed
+  throw new Error(`All CORS proxies failed:\n${errors.join('\n')}`);
+};
+
+// Fetch and parse multiple pages for pagination
+const fetchAllPages = async (baseUrl, brand, parseFunction, onProgress) => {
+  const allStudies = [];
+  const seenUrls = new Set();
+  let page = 1;
+  const maxPages = 10; // Limit to prevent infinite loops
+  let firstPageError = null;
+
+  while (page <= maxPages) {
+    try {
+      const pageUrl = page === 1 ? baseUrl : `${baseUrl}page/${page}/`;
+
+      const { html, proxyUsed } = await fetchWithProxy(pageUrl);
+
+      if (page === 1) {
+        console.log(`Successfully fetched ${brand} using proxy: ${proxyUsed}`);
       }
 
       const studies = parseFunction(html, pageUrl);
+
+      // If first page returns no studies, something might be wrong with parsing
+      if (page === 1 && studies.length === 0) {
+        console.warn(`Warning: No studies found on first page for ${brand}. HTML length: ${html.length}`);
+        // Log a snippet of the HTML for debugging
+        console.log('HTML snippet:', html.substring(0, 500));
+        firstPageError = `No studies found on ${brand} category page. The website structure may have changed.`;
+      }
 
       // Filter out duplicates
       let newStudiesCount = 0;
@@ -347,8 +418,18 @@ const fetchAllPages = async (baseUrl, brand, parseFunction) => {
 
     } catch (error) {
       console.error(`Error fetching page ${page} for ${brand}:`, error);
+      // If first page fails, throw the error
+      if (page === 1) {
+        throw new Error(`Failed to fetch ${brand} studies: ${error.message}`);
+      }
+      // For subsequent pages, just stop pagination
       break;
     }
+  }
+
+  // If we got no studies and had a first page parsing issue, throw an error
+  if (allStudies.length === 0 && firstPageError) {
+    throw new Error(firstPageError);
   }
 
   return allStudies;
@@ -357,9 +438,10 @@ const fetchAllPages = async (baseUrl, brand, parseFunction) => {
 // Main function to scrape all category pages
 export const scrapeAllCategoryPages = async (onProgress) => {
   const allStudies = [];
+  const errors = [];
 
+  // Fetch LawnStarter studies
   try {
-    // Fetch LawnStarter studies
     if (onProgress) onProgress('Fetching LawnStarter studies...');
     const lawnstarterStudies = await fetchAllPages(
       CATEGORY_URLS.lawnstarter,
@@ -367,8 +449,14 @@ export const scrapeAllCategoryPages = async (onProgress) => {
       parseLawnStarterPage
     );
     allStudies.push(...lawnstarterStudies);
+    if (onProgress) onProgress(`Found ${lawnstarterStudies.length} LawnStarter studies`);
+  } catch (error) {
+    console.error('Error fetching LawnStarter:', error);
+    errors.push(`LawnStarter: ${error.message}`);
+  }
 
-    // Fetch Lawn Love studies
+  // Fetch Lawn Love studies
+  try {
     if (onProgress) onProgress('Fetching Lawn Love studies...');
     const lawnloveStudies = await fetchAllPages(
       CATEGORY_URLS.lawnlove,
@@ -376,40 +464,51 @@ export const scrapeAllCategoryPages = async (onProgress) => {
       parseLawnLovePage
     );
     allStudies.push(...lawnloveStudies);
-
-    // Deduplicate by URL (in case of cross-posting)
-    const uniqueStudies = [];
-    const seenUrls = new Set();
-    allStudies.forEach(study => {
-      // Normalize URL for comparison
-      const normalizedUrl = study.url.replace(/\/$/, '').toLowerCase();
-      if (!seenUrls.has(normalizedUrl)) {
-        seenUrls.add(normalizedUrl);
-        uniqueStudies.push(study);
-      }
-    });
-
-    // Sort by publish date (newest first), with null dates at the end
-    uniqueStudies.sort((a, b) => {
-      if (!a.publishDate && !b.publishDate) return 0;
-      if (!a.publishDate) return 1;
-      if (!b.publishDate) return -1;
-      return new Date(b.publishDate) - new Date(a.publishDate);
-    });
-
-    // Save to cache
-    if (onProgress) onProgress('Saving to cache...');
-    const timestamp = saveCachedArchive(uniqueStudies);
-
-    return {
-      studies: uniqueStudies,
-      timestamp: timestamp,
-    };
-
+    if (onProgress) onProgress(`Found ${lawnloveStudies.length} Lawn Love studies`);
   } catch (error) {
-    console.error('Error scraping category pages:', error);
-    throw error;
+    console.error('Error fetching Lawn Love:', error);
+    errors.push(`Lawn Love: ${error.message}`);
   }
+
+  // If both sources failed, throw an error
+  if (allStudies.length === 0 && errors.length > 0) {
+    throw new Error(`Failed to fetch studies:\n${errors.join('\n')}`);
+  }
+
+  // Deduplicate by URL (in case of cross-posting)
+  const uniqueStudies = [];
+  const seenUrls = new Set();
+  allStudies.forEach(study => {
+    // Normalize URL for comparison
+    const normalizedUrl = study.url.replace(/\/$/, '').toLowerCase();
+    if (!seenUrls.has(normalizedUrl)) {
+      seenUrls.add(normalizedUrl);
+      uniqueStudies.push(study);
+    }
+  });
+
+  // Sort by publish date (newest first), with null dates at the end
+  uniqueStudies.sort((a, b) => {
+    if (!a.publishDate && !b.publishDate) return 0;
+    if (!a.publishDate) return 1;
+    if (!b.publishDate) return -1;
+    return new Date(b.publishDate) - new Date(a.publishDate);
+  });
+
+  // Save to cache
+  if (onProgress) onProgress('Saving to cache...');
+  const timestamp = saveCachedArchive(uniqueStudies);
+
+  // Log any partial errors but still return results
+  if (errors.length > 0) {
+    console.warn('Partial fetch errors:', errors);
+  }
+
+  return {
+    studies: uniqueStudies,
+    timestamp: timestamp,
+    warnings: errors.length > 0 ? errors : null,
+  };
 };
 
 // Match scraped studies with Google Sheet data
