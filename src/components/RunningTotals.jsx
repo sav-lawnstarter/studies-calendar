@@ -544,7 +544,7 @@ export default function RunningTotals() {
               <div className="p-2 bg-purple-100 rounded-lg">
                 <MessageSquare size={20} className="text-purple-600" />
               </div>
-              <span className="text-sm text-gray-500">Experts Responded</span>
+              <span className="text-sm text-gray-500"># Expert Responses</span>
             </div>
             <p className="text-4xl font-bold text-purple-600">{stats.totalExpertsResponded}</p>
             <p className="text-sm text-gray-500 mt-1">
