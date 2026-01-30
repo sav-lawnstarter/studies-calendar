@@ -1206,7 +1206,7 @@ export default function ContentCalendar() {
                   )}
                   {selectedEvent.expertsContacted && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1"># Expert Responses</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1"># Experts Contacted</label>
                       <p className="text-gray-900">{selectedEvent.expertsContacted}</p>
                     </div>
                   )}
