@@ -41,6 +41,7 @@ export default function StoryArchive() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState(null);
+  const [warning, setWarning] = useState(null);
 
   // Google Sheets data
   const [sheetData, setSheetData] = useState([]);
@@ -174,6 +175,7 @@ export default function StoryArchive() {
   const handleRefresh = async () => {
     setIsLoading(true);
     setError(null);
+    setWarning(null);
     setLoadingMessage('Starting scrape...');
 
     try {
@@ -184,6 +186,11 @@ export default function StoryArchive() {
       setStudies(result.studies);
       setLastUpdated(result.timestamp);
       setLoadingMessage('');
+
+      // Show warning if some sources had issues but we still got results
+      if (result.warnings && result.warnings.length > 0) {
+        setWarning(`Some sources had issues: ${result.warnings.join(', ')}`);
+      }
     } catch (err) {
       setError(err.message || 'Failed to refresh archive');
       setLoadingMessage('');
@@ -696,10 +703,24 @@ export default function StoryArchive() {
       {error && (
         <div className="mb-4 p-3 bg-red-50 rounded-lg flex items-center gap-2">
           <AlertCircle size={16} className="text-red-600" />
-          <span className="text-red-700">{error}</span>
+          <span className="text-red-700 whitespace-pre-wrap">{error}</span>
           <button
             onClick={() => setError(null)}
             className="ml-auto text-red-600 hover:text-red-800"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Warning message */}
+      {warning && (
+        <div className="mb-4 p-3 bg-yellow-50 rounded-lg flex items-center gap-2">
+          <AlertCircle size={16} className="text-yellow-600" />
+          <span className="text-yellow-700">{warning}</span>
+          <button
+            onClick={() => setWarning(null)}
+            className="ml-auto text-yellow-600 hover:text-yellow-800"
           >
             <X size={16} />
           </button>
