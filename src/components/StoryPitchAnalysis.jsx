@@ -1132,7 +1132,7 @@ export default function StoryPitchAnalysis() {
                         </div>
                         <p className="text-lg font-semibold text-gray-900">{formatPosition(storyMetrics.gsc.current.position)}</p>
                         {storyMetrics.gsc.comparison.positionChange !== null && (
-                          <p className={`text-xs ${getChangeClass(storyMetrics.gsc.comparison.positionChange, false)}`}>
+                          <p className={`text-xs ${getChangeClass(storyMetrics.gsc.comparison.positionChange, true)}`}>
                             {parseFloat(storyMetrics.gsc.comparison.positionChange) > 0 ? '+' : ''}{storyMetrics.gsc.comparison.positionChange} positions vs last year
                           </p>
                         )}
