@@ -6,6 +6,7 @@ import StoryArchive from './components/StoryArchive';
 import StoryIdeation from './components/StoryIdeation';
 import StoryPitchAnalysis from './components/StoryPitchAnalysis';
 import CompetitorLog from './components/CompetitorLog';
+import TrendingTopics from './components/TrendingTopics';
 import DueThisWeek from './components/DueThisWeek';
 
 function App() {
@@ -27,6 +28,8 @@ function App() {
         return <StoryPitchAnalysis />;
       case 'competitor-log':
         return <CompetitorLog />;
+      case 'trending-topics':
+        return <TrendingTopics />;
       default:
         return <ContentCalendar />;
     }
