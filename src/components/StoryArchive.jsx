@@ -38,6 +38,7 @@ import {
 } from '../utils/googleSheets';
 import {
   fetchSearchConsoleWithComparison,
+  batchFetchSearchConsoleMetrics,
   getPropertiesForBrand,
   formatNumber,
   formatPercent,
@@ -85,6 +86,10 @@ export default function StoryArchive() {
   const [gscData, setGscData] = useState(null);
   const [isLoadingGsc, setIsLoadingGsc] = useState(false);
   const [gscError, setGscError] = useState(null);
+
+  // GSC summary data for cards (URL -> metrics map)
+  const [gscSummaryData, setGscSummaryData] = useState({});
+  const [isLoadingGscSummary, setIsLoadingGscSummary] = useState(false);
 
   // Get available years for filter
   const availableYears = useMemo(() => {
@@ -143,6 +148,38 @@ export default function StoryArchive() {
   useEffect(() => {
     loadSheetData();
   }, [loadSheetData]);
+
+  // Fetch GSC summary data for all studies (for card display)
+  const loadGscSummaryData = useCallback(async () => {
+    if (studies.length === 0) return;
+
+    let token = getStoredToken();
+    if (!token) {
+      try {
+        token = await authenticateWithGoogle(clientId);
+      } catch (err) {
+        console.error('Auth error for GSC summary:', err);
+        return;
+      }
+    }
+
+    setIsLoadingGscSummary(true);
+    try {
+      const summaryData = await batchFetchSearchConsoleMetrics(token, studies);
+      setGscSummaryData(summaryData);
+    } catch (err) {
+      console.error('Error loading GSC summary data:', err);
+    } finally {
+      setIsLoadingGscSummary(false);
+    }
+  }, [studies]);
+
+  // Load GSC summary data when studies are loaded
+  useEffect(() => {
+    if (studies.length > 0) {
+      loadGscSummaryData();
+    }
+  }, [studies, loadGscSummaryData]);
 
   // Fetch Google Search Console data when a study is selected
   const fetchGscData = useCallback(async (study) => {
@@ -428,7 +465,7 @@ export default function StoryArchive() {
   const BrandBadge = ({ brand }) => {
     const colors = {
       LawnStarter: 'bg-ls-green text-white',
-      'Lawn Love': 'bg-pink-500 text-white',
+      'Lawn Love': 'bg-ls-green-dark text-white',
     };
     return (
       <span
@@ -440,137 +477,131 @@ export default function StoryArchive() {
   };
 
   // Study card component (grid view)
-  const StudyCard = ({ study }) => (
-    <div className="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
-      {/* Thumbnail */}
-      {study.image ? (
-        <div className="h-40 bg-gray-100 overflow-hidden">
-          <img
-            src={study.image}
-            alt={study.title}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.target.style.display = 'none';
-            }}
-          />
-        </div>
-      ) : (
-        <div className="h-40 bg-gradient-to-br from-ls-green-lighter to-ls-green/10 flex items-center justify-center">
-          <FileText size={48} className="text-ls-green/30" />
-        </div>
-      )}
+  const StudyCard = ({ study }) => {
+    const gscMetrics = gscSummaryData[study.url];
 
-      {/* Content */}
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <BrandBadge brand={study.brand} />
-          {study.inContentCalendar && (
-            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-ls-green text-white">
-              In Calendar
-            </span>
-          )}
-          {study.hasSheetData && (
-            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-              Has Metrics
-            </span>
-          )}
-        </div>
-
-        <a
-          href={study.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block mb-2 group"
-        >
-          <h3 className="font-semibold text-gray-900 group-hover:text-ls-green transition-colors line-clamp-2">
-            {study.title}
-          </h3>
-        </a>
-
-        <div className="flex items-center gap-1 text-sm text-gray-500 mb-3">
-          <Calendar size={14} />
-          {formatDate(study.publishDate)}
-        </div>
-
-        {/* Performance metrics */}
-        {study.hasSheetData && (
-          <div className="flex flex-wrap gap-2 mb-3 text-xs">
-            {study.studyLinkNumber && (
-              <span className="flex items-center gap-1 text-gray-600">
-                <Link2 size={12} />
-                {study.studyLinkNumber} links
+    return (
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
+        {/* Content */}
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <BrandBadge brand={study.brand} />
+            {study.inContentCalendar && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-ls-green text-white">
+                In Calendar
               </span>
             )}
-            {study.avgOpenRate && (
-              <span className="flex items-center gap-1 text-gray-600">
-                <BarChart2 size={12} />
-                O/R: {study.avgOpenRate}%
-              </span>
-            )}
-            {study.avgClickRate && (
-              <span className="flex items-center gap-1 text-gray-600">
-                <TrendingUp size={12} />
-                C/R: {study.avgClickRate}%
+            {study.hasSheetData && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                Has Metrics
               </span>
             )}
           </div>
-        )}
 
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSelectedStudy(study)}
-            className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
-          >
-            <Eye size={14} />
-            View Details
-          </button>
           <a
             href={study.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-2 bg-ls-green hover:bg-ls-green-light rounded-lg text-white transition-colors"
-            title="Open study"
+            className="block mb-2 group"
           >
-            <ExternalLink size={16} />
+            <h3 className="font-semibold text-gray-900 group-hover:text-ls-green transition-colors line-clamp-2">
+              {study.title}
+            </h3>
           </a>
-        </div>
-      </div>
-    </div>
-  );
 
-  // Study row component (list view)
-  const StudyRow = ({ study }) => (
-    <tr className="border-b hover:bg-gray-50 transition-colors">
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
-          {study.image ? (
-            <img
-              src={study.image}
-              alt=""
-              className="w-12 h-12 rounded object-cover bg-gray-100"
-              onError={(e) => {
-                e.target.src = '';
-                e.target.className = 'w-12 h-12 rounded bg-gray-100';
-              }}
-            />
-          ) : (
-            <div className="w-12 h-12 rounded bg-gradient-to-br from-ls-green-lighter to-ls-green/10 flex items-center justify-center">
-              <FileText size={20} className="text-ls-green/30" />
+          <div className="flex items-center gap-1 text-sm text-gray-500 mb-3">
+            <Calendar size={14} />
+            {formatDate(study.publishDate)}
+          </div>
+
+          {/* Search Performance Overview */}
+          {gscMetrics && (
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div className="bg-blue-50 rounded-lg p-2 text-center">
+                <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
+                  <Eye size={12} />
+                  <span className="text-xs font-medium">Impressions</span>
+                </div>
+                <p className="text-sm font-semibold text-blue-700">
+                  {formatNumber(gscMetrics.impressions)}
+                </p>
+              </div>
+              <div className="bg-orange-50 rounded-lg p-2 text-center">
+                <div className="flex items-center justify-center gap-1 text-orange-600 mb-1">
+                  <Globe size={12} />
+                  <span className="text-xs font-medium">Avg Position</span>
+                </div>
+                <p className="text-sm font-semibold text-orange-700">
+                  {formatPosition(gscMetrics.position)}
+                </p>
+              </div>
             </div>
           )}
-          <div className="flex-1 min-w-0">
+
+          {/* Performance metrics */}
+          {study.hasSheetData && (
+            <div className="flex flex-wrap gap-2 mb-3 text-xs">
+              {study.studyLinkNumber && (
+                <span className="flex items-center gap-1 text-gray-600">
+                  <Link2 size={12} />
+                  {study.studyLinkNumber} links
+                </span>
+              )}
+              {study.avgOpenRate && (
+                <span className="flex items-center gap-1 text-gray-600">
+                  <BarChart2 size={12} />
+                  O/R: {study.avgOpenRate}%
+                </span>
+              )}
+              {study.avgClickRate && (
+                <span className="flex items-center gap-1 text-gray-600">
+                  <TrendingUp size={12} />
+                  C/R: {study.avgClickRate}%
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedStudy(study)}
+              className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+            >
+              <Eye size={14} />
+              View Details
+            </button>
             <a
               href={study.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-gray-900 hover:text-ls-green transition-colors block truncate"
+              className="p-2 bg-ls-green hover:bg-ls-green-light rounded-lg text-white transition-colors"
+              title="Open study"
             >
-              {study.title}
+              <ExternalLink size={16} />
             </a>
           </div>
         </div>
-      </td>
+      </div>
+    );
+  };
+
+  // Study row component (list view)
+  const StudyRow = ({ study }) => {
+    const gscMetrics = gscSummaryData[study.url];
+
+    return (
+      <tr className="border-b hover:bg-gray-50 transition-colors">
+        <td className="px-4 py-3">
+          <a
+            href={study.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-gray-900 hover:text-ls-green transition-colors block truncate max-w-sm"
+          >
+            {study.title}
+          </a>
+        </td>
       <td className="px-4 py-3">
         <BrandBadge brand={study.brand} />
       </td>
@@ -614,6 +645,24 @@ export default function StoryArchive() {
         )}
       </td>
       <td className="px-4 py-3">
+        {gscMetrics?.impressions ? (
+          <span className="text-sm font-medium text-blue-700">
+            {formatNumber(gscMetrics.impressions)}
+          </span>
+        ) : (
+          <span className="text-sm text-gray-400">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {gscMetrics?.position ? (
+          <span className="text-sm font-medium text-orange-700">
+            {formatPosition(gscMetrics.position)}
+          </span>
+        ) : (
+          <span className="text-sm text-gray-400">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
         <div className="flex items-center justify-center gap-1">
           <button
             onClick={() => setSelectedStudy(study)}
@@ -634,7 +683,8 @@ export default function StoryArchive() {
         </div>
       </td>
     </tr>
-  );
+    );
+  };
 
   // Study detail modal
   const StudyDetailModal = () => {
@@ -1185,19 +1235,19 @@ export default function StoryArchive() {
           </div>
           <div className={`flex-1 p-3 rounded-lg border ${
             brandStatus.lawnlove.status === BRAND_STATUS.LOADING
-              ? 'bg-pink-50 border-pink-200'
+              ? 'bg-ls-green-lighter border-ls-green/30'
               : brandStatus.lawnlove.status === BRAND_STATUS.SUCCESS
-              ? 'bg-pink-100 border-pink-300'
+              ? 'bg-ls-green-lighter border-ls-green/50'
               : brandStatus.lawnlove.status === BRAND_STATUS.ERROR
               ? 'bg-red-50 border-red-200'
               : 'bg-gray-50 border-gray-200'
           }`}>
             <div className="flex items-center gap-2">
               {brandStatus.lawnlove.status === BRAND_STATUS.LOADING && (
-                <Loader2 size={16} className="animate-spin text-pink-600" />
+                <Loader2 size={16} className="animate-spin text-ls-green-dark" />
               )}
               {brandStatus.lawnlove.status === BRAND_STATUS.SUCCESS && (
-                <div className="w-4 h-4 bg-pink-500 rounded-full flex items-center justify-center">
+                <div className="w-4 h-4 bg-ls-green-dark rounded-full flex items-center justify-center">
                   <span className="text-white text-xs">&#10003;</span>
                 </div>
               )}
@@ -1205,7 +1255,7 @@ export default function StoryArchive() {
                 <AlertCircle size={16} className="text-red-600" />
               )}
               <span className={`text-sm font-medium ${
-                brandStatus.lawnlove.status === BRAND_STATUS.ERROR ? 'text-red-700' : 'text-pink-700'
+                brandStatus.lawnlove.status === BRAND_STATUS.ERROR ? 'text-red-700' : 'text-ls-green-dark'
               }`}>
                 Lawn Love
               </span>
@@ -1346,7 +1396,7 @@ export default function StoryArchive() {
             <span className="px-2 py-0.5 bg-ls-green-lighter text-ls-green rounded text-xs">
               {matchedStudies.filter(s => s.brand === 'LawnStarter').length} LawnStarter
             </span>
-            <span className="px-2 py-0.5 bg-pink-100 text-pink-700 rounded text-xs">
+            <span className="px-2 py-0.5 bg-ls-green-lighter text-ls-green-dark rounded text-xs">
               {matchedStudies.filter(s => s.brand === 'Lawn Love').length} Lawn Love
             </span>
           </span>
@@ -1448,6 +1498,16 @@ export default function StoryArchive() {
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">
                   <span className="flex items-center gap-1">
                     <TrendingUp size={14} /> Avg C/R
+                  </span>
+                </th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <Eye size={14} /> Impressions
+                  </span>
+                </th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <Globe size={14} /> Avg Pos
                   </span>
                 </th>
                 <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">

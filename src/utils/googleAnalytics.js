@@ -296,6 +296,97 @@ export const getChangeArrow = (change) => {
   return numChange > 0 ? '+' : '';
 };
 
+// Batch fetch Search Console metrics for multiple URLs
+// Returns a map of URL -> { impressions, position, clicks, ctr }
+export const batchFetchSearchConsoleMetrics = async (accessToken, studies) => {
+  const today = new Date();
+  const endDate = today.toISOString().split('T')[0];
+
+  // Calculate start date (last 28 days)
+  const startDateCurrent = new Date(today);
+  startDateCurrent.setDate(startDateCurrent.getDate() - 28);
+  const startDateCurrentStr = startDateCurrent.toISOString().split('T')[0];
+
+  const results = {};
+
+  // Group studies by brand/GSC property to minimize API calls
+  const studiesByProperty = {};
+  for (const study of studies) {
+    const { gscProperty } = getPropertiesForBrand(study.brand);
+    if (!gscProperty) continue;
+
+    if (!studiesByProperty[gscProperty]) {
+      studiesByProperty[gscProperty] = [];
+    }
+    studiesByProperty[gscProperty].push(study);
+  }
+
+  // Fetch metrics for each property
+  for (const [siteUrl, propertyStudies] of Object.entries(studiesByProperty)) {
+    try {
+      const formattedSiteUrl = encodeURIComponent(siteUrl);
+      const url = `https://www.googleapis.com/webmasters/v3/sites/${formattedSiteUrl}/searchAnalytics/query`;
+
+      // Get all pages for this property (with pagination if needed)
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: startDateCurrentStr,
+          endDate,
+          dimensions: ['page'],
+          rowLimit: 5000,  // Get up to 5000 pages
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn(`Failed to fetch GSC data for ${siteUrl}:`, response.statusText);
+        continue;
+      }
+
+      const data = await response.json();
+
+      if (data.rows) {
+        // Build a map of normalized URLs to metrics
+        const urlMetrics = {};
+        for (const row of data.rows) {
+          const pageUrl = row.keys[0].toLowerCase();
+          urlMetrics[pageUrl] = {
+            clicks: row.clicks || 0,
+            impressions: row.impressions || 0,
+            ctr: row.ctr || 0,
+            position: row.position || 0,
+          };
+        }
+
+        // Match study URLs to the fetched metrics
+        for (const study of propertyStudies) {
+          const normalizedUrl = study.url.toLowerCase();
+          // Try exact match first
+          if (urlMetrics[normalizedUrl]) {
+            results[study.url] = urlMetrics[normalizedUrl];
+          } else {
+            // Try partial match (URL might have trailing slashes or query params)
+            for (const [pageUrl, metrics] of Object.entries(urlMetrics)) {
+              if (pageUrl.includes(normalizedUrl) || normalizedUrl.includes(pageUrl)) {
+                results[study.url] = metrics;
+                break;
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching GSC data for ${siteUrl}:`, error);
+    }
+  }
+
+  return results;
+};
+
 // List available Search Console sites
 export const fetchSearchConsoleSites = async (accessToken) => {
   const url = 'https://www.googleapis.com/webmasters/v3/sites';
