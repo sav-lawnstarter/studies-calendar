@@ -25,6 +25,8 @@ import {
   matchStudiesWithSheetData,
   getYearsFromStudies,
   extractYear,
+  retryLawnLove,
+  BRAND_STATUS,
 } from '../utils/categoryScraper';
 import {
   getStoredToken,
@@ -43,6 +45,13 @@ export default function StoryArchive() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
+
+  // Brand-specific status tracking
+  const [brandStatus, setBrandStatus] = useState({
+    lawnstarter: { status: BRAND_STATUS.IDLE, error: null },
+    lawnlove: { status: BRAND_STATUS.IDLE, error: null },
+  });
+  const [isRetryingLawnLove, setIsRetryingLawnLove] = useState(false);
 
   // Google Sheets data (Study Story Data for metrics)
   const [sheetData, setSheetData] = useState([]);
@@ -239,6 +248,14 @@ export default function StoryArchive() {
     return result;
   }, [matchedStudies, searchQuery, brandFilter, yearFilter, calendarFilter, sortBy]);
 
+  // Handle brand status updates
+  const handleBrandStatus = (brand, status, errorMsg = null) => {
+    setBrandStatus(prev => ({
+      ...prev,
+      [brand]: { status, error: errorMsg },
+    }));
+  };
+
   // Refresh archive (re-scrape category pages)
   const handleRefresh = async () => {
     setIsLoading(true);
@@ -246,14 +263,35 @@ export default function StoryArchive() {
     setWarning(null);
     setLoadingMessage('Starting scrape...');
 
+    // Reset brand status
+    setBrandStatus({
+      lawnstarter: { status: BRAND_STATUS.LOADING, error: null },
+      lawnlove: { status: BRAND_STATUS.LOADING, error: null },
+    });
+
     try {
-      const result = await scrapeAllCategoryPages((msg) => {
-        setLoadingMessage(msg);
-      });
+      const result = await scrapeAllCategoryPages(
+        (msg) => setLoadingMessage(msg),
+        handleBrandStatus
+      );
 
       setStudies(result.studies);
       setLastUpdated(result.timestamp);
       setLoadingMessage('');
+
+      // Update brand status from results
+      if (result.brandResults) {
+        setBrandStatus({
+          lawnstarter: {
+            status: result.brandResults.lawnstarter.status,
+            error: result.brandResults.lawnstarter.error,
+          },
+          lawnlove: {
+            status: result.brandResults.lawnlove.status,
+            error: result.brandResults.lawnlove.error,
+          },
+        });
+      }
 
       // Show warning if some sources had issues but we still got results
       if (result.warnings && result.warnings.length > 0) {
@@ -264,6 +302,33 @@ export default function StoryArchive() {
       setLoadingMessage('');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Retry fetching only Lawn Love studies
+  const handleRetryLawnLove = async () => {
+    setIsRetryingLawnLove(true);
+    setWarning(null);
+
+    try {
+      const result = await retryLawnLove(
+        studies,
+        (msg) => setLoadingMessage(msg),
+        handleBrandStatus
+      );
+
+      if (result.success) {
+        setStudies(result.studies);
+        setLastUpdated(result.timestamp);
+        setLoadingMessage('');
+      } else {
+        setWarning(`Lawn Love retry failed: ${result.error}`);
+      }
+    } catch (err) {
+      setWarning(`Lawn Love retry failed: ${err.message}`);
+    } finally {
+      setIsRetryingLawnLove(false);
+      setLoadingMessage('');
     }
   };
 
@@ -881,6 +946,110 @@ export default function StoryArchive() {
         </div>
       )}
 
+      {/* Brand Status Banner - shows when Lawn Love failed but LawnStarter succeeded */}
+      {brandStatus.lawnlove.status === BRAND_STATUS.ERROR &&
+       brandStatus.lawnstarter.status === BRAND_STATUS.SUCCESS && (
+        <div className="mb-4 p-4 bg-pink-50 border border-pink-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-pink-100 rounded-full flex items-center justify-center">
+                <AlertCircle size={20} className="text-pink-600" />
+              </div>
+              <div>
+                <p className="font-medium text-pink-900">Lawn Love studies unavailable</p>
+                <p className="text-sm text-pink-700">
+                  {brandStatus.lawnlove.error || 'CORS proxy issues prevented loading Lawn Love studies'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleRetryLawnLove}
+              disabled={isRetryingLawnLove}
+              className="flex items-center gap-2 px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw size={16} className={isRetryingLawnLove ? 'animate-spin' : ''} />
+              {isRetryingLawnLove ? 'Retrying...' : 'Click to retry'}
+            </button>
+          </div>
+          <div className="mt-3 pt-3 border-t border-pink-200">
+            <p className="text-xs text-pink-600">
+              LawnStarter studies are displayed below. You can also visit{' '}
+              <a
+                href="https://lawnlove.com/blog/category/studies/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-pink-800"
+              >
+                Lawn Love studies directly
+              </a>
+              .
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Brand Status Indicators - shows loading state for each brand */}
+      {isLoading && (
+        <div className="mb-4 flex gap-4">
+          <div className={`flex-1 p-3 rounded-lg border ${
+            brandStatus.lawnstarter.status === BRAND_STATUS.LOADING
+              ? 'bg-green-50 border-green-200'
+              : brandStatus.lawnstarter.status === BRAND_STATUS.SUCCESS
+              ? 'bg-green-100 border-green-300'
+              : brandStatus.lawnstarter.status === BRAND_STATUS.ERROR
+              ? 'bg-red-50 border-red-200'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              {brandStatus.lawnstarter.status === BRAND_STATUS.LOADING && (
+                <Loader2 size={16} className="animate-spin text-green-600" />
+              )}
+              {brandStatus.lawnstarter.status === BRAND_STATUS.SUCCESS && (
+                <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs">&#10003;</span>
+                </div>
+              )}
+              {brandStatus.lawnstarter.status === BRAND_STATUS.ERROR && (
+                <AlertCircle size={16} className="text-red-600" />
+              )}
+              <span className={`text-sm font-medium ${
+                brandStatus.lawnstarter.status === BRAND_STATUS.ERROR ? 'text-red-700' : 'text-green-700'
+              }`}>
+                LawnStarter
+              </span>
+            </div>
+          </div>
+          <div className={`flex-1 p-3 rounded-lg border ${
+            brandStatus.lawnlove.status === BRAND_STATUS.LOADING
+              ? 'bg-pink-50 border-pink-200'
+              : brandStatus.lawnlove.status === BRAND_STATUS.SUCCESS
+              ? 'bg-pink-100 border-pink-300'
+              : brandStatus.lawnlove.status === BRAND_STATUS.ERROR
+              ? 'bg-red-50 border-red-200'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              {brandStatus.lawnlove.status === BRAND_STATUS.LOADING && (
+                <Loader2 size={16} className="animate-spin text-pink-600" />
+              )}
+              {brandStatus.lawnlove.status === BRAND_STATUS.SUCCESS && (
+                <div className="w-4 h-4 bg-pink-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs">&#10003;</span>
+                </div>
+              )}
+              {brandStatus.lawnlove.status === BRAND_STATUS.ERROR && (
+                <AlertCircle size={16} className="text-red-600" />
+              )}
+              <span className={`text-sm font-medium ${
+                brandStatus.lawnlove.status === BRAND_STATUS.ERROR ? 'text-red-700' : 'text-pink-700'
+              }`}>
+                Lawn Love
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters and Search */}
       <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
         <div className="flex flex-wrap items-center gap-4">
@@ -999,7 +1168,7 @@ export default function StoryArchive() {
         </div>
 
         {/* Results count */}
-        <div className="mt-3 text-sm text-gray-500 flex items-center gap-4">
+        <div className="mt-3 text-sm text-gray-500 flex items-center gap-4 flex-wrap">
           <span>
             Showing {filteredStudies.length} of {matchedStudies.length} studies
             {matchedStudies.filter(s => s.inContentCalendar).length > 0 && (
@@ -1007,6 +1176,15 @@ export default function StoryArchive() {
                 ({matchedStudies.filter(s => s.inContentCalendar).length} in calendar)
               </span>
             )}
+          </span>
+          {/* Brand counts */}
+          <span className="flex items-center gap-2">
+            <span className="px-2 py-0.5 bg-ls-green-lighter text-ls-green rounded text-xs">
+              {matchedStudies.filter(s => s.brand === 'LawnStarter').length} LawnStarter
+            </span>
+            <span className="px-2 py-0.5 bg-pink-100 text-pink-700 rounded text-xs">
+              {matchedStudies.filter(s => s.brand === 'Lawn Love').length} Lawn Love
+            </span>
           </span>
           {(isLoadingSheet || isLoadingCalendar) && (
             <span className="text-blue-600">
