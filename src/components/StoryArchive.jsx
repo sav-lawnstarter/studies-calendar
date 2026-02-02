@@ -18,6 +18,8 @@ import {
   Users,
   Clock,
   FileText,
+  MousePointerClick,
+  Globe,
 } from 'lucide-react';
 import {
   getCachedArchive,
@@ -34,6 +36,15 @@ import {
   fetchSheetData,
   fetchContentCalendarData,
 } from '../utils/googleSheets';
+import {
+  fetchSearchConsoleWithComparison,
+  getPropertiesForBrand,
+  formatNumber,
+  formatPercent,
+  formatPosition,
+  getChangeClass,
+  getChangeArrow,
+} from '../utils/googleAnalytics';
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -69,6 +80,11 @@ export default function StoryArchive() {
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [selectedStudy, setSelectedStudy] = useState(null);
+
+  // Google Search Console data for modal
+  const [gscData, setGscData] = useState(null);
+  const [isLoadingGsc, setIsLoadingGsc] = useState(false);
+  const [gscError, setGscError] = useState(null);
 
   // Get available years for filter
   const availableYears = useMemo(() => {
@@ -127,6 +143,50 @@ export default function StoryArchive() {
   useEffect(() => {
     loadSheetData();
   }, [loadSheetData]);
+
+  // Fetch Google Search Console data when a study is selected
+  const fetchGscData = useCallback(async (study) => {
+    if (!study || !study.url) return;
+
+    const { gscProperty } = getPropertiesForBrand(study.brand);
+    if (!gscProperty) {
+      setGscError('Search Console not configured for this brand');
+      return;
+    }
+
+    let token = getStoredToken();
+    if (!token) {
+      try {
+        token = await authenticateWithGoogle(clientId);
+      } catch (err) {
+        setGscError('Authentication required');
+        return;
+      }
+    }
+
+    setIsLoadingGsc(true);
+    setGscError(null);
+
+    try {
+      const data = await fetchSearchConsoleWithComparison(token, gscProperty, study.url);
+      setGscData(data);
+    } catch (err) {
+      console.error('Error fetching GSC data:', err);
+      setGscError(err.message || 'Failed to load Search Console data');
+      setGscData(null);
+    } finally {
+      setIsLoadingGsc(false);
+    }
+  }, []);
+
+  // Load GSC data when a study is selected
+  useEffect(() => {
+    if (selectedStudy) {
+      setGscData(null);
+      setGscError(null);
+      fetchGscData(selectedStudy);
+    }
+  }, [selectedStudy, fetchGscData]);
 
   // Helper to normalize URLs for comparison
   const normalizeUrl = (url) => {
@@ -707,6 +767,110 @@ export default function StoryArchive() {
                     <ExternalLink size={16} />
                     Add to Content Calendar
                   </a>
+                </div>
+              )}
+            </div>
+
+            {/* Search Performance (Google Search Console) */}
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                Search Performance
+                <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
+              </h3>
+              {isLoadingGsc ? (
+                <div className="bg-gray-50 rounded-lg p-6 text-center">
+                  <Loader2 size={24} className="animate-spin text-ls-green mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">Loading Search Console data...</p>
+                </div>
+              ) : gscError ? (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-gray-500 text-center text-sm">
+                    {gscError}
+                  </p>
+                  <button
+                    onClick={() => fetchGscData(selectedStudy)}
+                    className="mt-2 mx-auto block text-ls-green hover:text-ls-green-light text-sm font-medium"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : gscData ? (
+                <div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {/* Clicks */}
+                    <div className="bg-ls-green-lighter rounded-lg p-4 text-center">
+                      <div className="flex items-center justify-center gap-1 text-ls-green mb-1">
+                        <MousePointerClick size={16} />
+                      </div>
+                      <p className="text-2xl font-bold text-ls-green">
+                        {formatNumber(gscData.current.clicks)}
+                      </p>
+                      <p className="text-xs text-gray-600">Clicks</p>
+                      {gscData.comparison.clicksChange !== null && (
+                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.clicksChange)}`}>
+                          {getChangeArrow(gscData.comparison.clicksChange)}{gscData.comparison.clicksChange}% YoY
+                        </p>
+                      )}
+                    </div>
+                    {/* Impressions */}
+                    <div className="bg-blue-50 rounded-lg p-4 text-center">
+                      <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
+                        <Eye size={16} />
+                      </div>
+                      <p className="text-2xl font-bold text-blue-600">
+                        {formatNumber(gscData.current.impressions)}
+                      </p>
+                      <p className="text-xs text-gray-600">Impressions</p>
+                      {gscData.comparison.impressionsChange !== null && (
+                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.impressionsChange)}`}>
+                          {getChangeArrow(gscData.comparison.impressionsChange)}{gscData.comparison.impressionsChange}% YoY
+                        </p>
+                      )}
+                    </div>
+                    {/* CTR */}
+                    <div className="bg-purple-50 rounded-lg p-4 text-center">
+                      <div className="flex items-center justify-center gap-1 text-purple-600 mb-1">
+                        <TrendingUp size={16} />
+                      </div>
+                      <p className="text-2xl font-bold text-purple-600">
+                        {formatPercent(gscData.current.ctr)}
+                      </p>
+                      <p className="text-xs text-gray-600">CTR</p>
+                      {gscData.comparison.ctrChange !== null && (
+                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.ctrChange)}`}>
+                          {getChangeArrow(gscData.comparison.ctrChange)}{gscData.comparison.ctrChange}% YoY
+                        </p>
+                      )}
+                    </div>
+                    {/* Average Position */}
+                    <div className="bg-orange-50 rounded-lg p-4 text-center">
+                      <div className="flex items-center justify-center gap-1 text-orange-600 mb-1">
+                        <Globe size={16} />
+                      </div>
+                      <p className="text-2xl font-bold text-orange-600">
+                        {formatPosition(gscData.current.position)}
+                      </p>
+                      <p className="text-xs text-gray-600">Avg Position</p>
+                      {gscData.comparison.positionChange !== null && (
+                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.positionChange, true)}`}>
+                          {parseFloat(gscData.comparison.positionChange) > 0 ? '+' : ''}{gscData.comparison.positionChange} pos YoY
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {/* Last year comparison row */}
+                  <div className="mt-3 grid grid-cols-4 gap-3 text-xs text-gray-500 px-1">
+                    <div className="text-center">Last yr: {formatNumber(gscData.lastYear.clicks)}</div>
+                    <div className="text-center">Last yr: {formatNumber(gscData.lastYear.impressions)}</div>
+                    <div className="text-center">Last yr: {formatPercent(gscData.lastYear.ctr)}</div>
+                    <div className="text-center">Last yr: {formatPosition(gscData.lastYear.position)}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-gray-500 text-center text-sm">
+                    No Search Console data available.
+                  </p>
                 </div>
               )}
             </div>
