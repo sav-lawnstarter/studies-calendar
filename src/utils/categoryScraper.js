@@ -6,6 +6,9 @@ const CATEGORY_URLS = {
   lawnlove: 'https://lawnlove.com/blog/category/studies/',
 };
 
+// Serverless API endpoint for Lawn Love (avoids CORS issues)
+const LAWN_LOVE_API_URL = '/api/scrape-lawnlove';
+
 // CORS proxy for client-side fetching - try multiple proxies for reliability
 const CORS_PROXIES = [
   'https://corsproxy.io/?',
@@ -15,6 +18,14 @@ const CORS_PROXIES = [
 
 // Currently selected proxy (will rotate on failure)
 let currentProxyIndex = 0;
+
+// Brand status tracking
+export const BRAND_STATUS = {
+  IDLE: 'idle',
+  LOADING: 'loading',
+  SUCCESS: 'success',
+  ERROR: 'error',
+};
 
 // Storage key for cached archive data
 const ARCHIVE_STORAGE_KEY = 'story-archive-data';
@@ -300,6 +311,33 @@ const parseLawnLovePage = (html, pageUrl) => {
   return studies;
 };
 
+// Fetch Lawn Love studies via serverless API (avoids CORS)
+const fetchLawnLoveViaApi = async () => {
+  try {
+    const response = await fetch(LAWN_LOVE_API_URL, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'API request failed');
+    }
+
+    return data.studies || [];
+  } catch (error) {
+    console.error('Lawn Love API fetch failed:', error);
+    throw error;
+  }
+};
+
 // Check if the response HTML is a proxy error page
 const isProxyErrorResponse = (html) => {
   const lowerHtml = html.toLowerCase();
@@ -436,43 +474,83 @@ const fetchAllPages = async (baseUrl, brand, parseFunction, onProgress) => {
 };
 
 // Main function to scrape all category pages
-export const scrapeAllCategoryPages = async (onProgress) => {
+export const scrapeAllCategoryPages = async (onProgress, onBrandStatus) => {
   const allStudies = [];
-  const errors = [];
+  const brandResults = {
+    lawnstarter: { status: BRAND_STATUS.IDLE, studies: [], error: null },
+    lawnlove: { status: BRAND_STATUS.IDLE, studies: [], error: null },
+  };
 
-  // Fetch LawnStarter studies
+  // Fetch LawnStarter studies (via CORS proxy)
   try {
+    if (onBrandStatus) onBrandStatus('lawnstarter', BRAND_STATUS.LOADING);
     if (onProgress) onProgress('Fetching LawnStarter studies...');
+
     const lawnstarterStudies = await fetchAllPages(
       CATEGORY_URLS.lawnstarter,
       'LawnStarter',
       parseLawnStarterPage
     );
+
+    brandResults.lawnstarter = {
+      status: BRAND_STATUS.SUCCESS,
+      studies: lawnstarterStudies,
+      error: null,
+    };
     allStudies.push(...lawnstarterStudies);
+
+    if (onBrandStatus) onBrandStatus('lawnstarter', BRAND_STATUS.SUCCESS);
     if (onProgress) onProgress(`Found ${lawnstarterStudies.length} LawnStarter studies`);
   } catch (error) {
     console.error('Error fetching LawnStarter:', error);
-    errors.push(`LawnStarter: ${error.message}`);
+    brandResults.lawnstarter = {
+      status: BRAND_STATUS.ERROR,
+      studies: [],
+      error: error.message,
+    };
+    if (onBrandStatus) onBrandStatus('lawnstarter', BRAND_STATUS.ERROR, error.message);
   }
 
-  // Fetch Lawn Love studies
+  // Fetch Lawn Love studies - try API first, then fall back to CORS proxy
   try {
-    if (onProgress) onProgress('Fetching Lawn Love studies...');
-    const lawnloveStudies = await fetchAllPages(
-      CATEGORY_URLS.lawnlove,
-      'Lawn Love',
-      parseLawnLovePage
-    );
+    if (onBrandStatus) onBrandStatus('lawnlove', BRAND_STATUS.LOADING);
+    if (onProgress) onProgress('Fetching Lawn Love studies via API...');
+
+    let lawnloveStudies = [];
+
+    // Try the serverless API first (avoids CORS issues)
+    try {
+      lawnloveStudies = await fetchLawnLoveViaApi();
+      if (onProgress) onProgress(`Found ${lawnloveStudies.length} Lawn Love studies via API`);
+    } catch (apiError) {
+      console.warn('Lawn Love API failed, trying CORS proxy fallback:', apiError);
+      if (onProgress) onProgress('API failed, trying CORS proxy for Lawn Love...');
+
+      // Fall back to CORS proxy
+      lawnloveStudies = await fetchAllPages(
+        CATEGORY_URLS.lawnlove,
+        'Lawn Love',
+        parseLawnLovePage
+      );
+    }
+
+    brandResults.lawnlove = {
+      status: BRAND_STATUS.SUCCESS,
+      studies: lawnloveStudies,
+      error: null,
+    };
     allStudies.push(...lawnloveStudies);
+
+    if (onBrandStatus) onBrandStatus('lawnlove', BRAND_STATUS.SUCCESS);
     if (onProgress) onProgress(`Found ${lawnloveStudies.length} Lawn Love studies`);
   } catch (error) {
     console.error('Error fetching Lawn Love:', error);
-    errors.push(`Lawn Love: ${error.message}`);
-  }
-
-  // If both sources failed, throw an error
-  if (allStudies.length === 0 && errors.length > 0) {
-    throw new Error(`Failed to fetch studies:\n${errors.join('\n')}`);
+    brandResults.lawnlove = {
+      status: BRAND_STATUS.ERROR,
+      studies: [],
+      error: error.message,
+    };
+    if (onBrandStatus) onBrandStatus('lawnlove', BRAND_STATUS.ERROR, error.message);
   }
 
   // Deduplicate by URL (in case of cross-posting)
@@ -499,16 +577,95 @@ export const scrapeAllCategoryPages = async (onProgress) => {
   if (onProgress) onProgress('Saving to cache...');
   const timestamp = saveCachedArchive(uniqueStudies);
 
-  // Log any partial errors but still return results
-  if (errors.length > 0) {
-    console.warn('Partial fetch errors:', errors);
+  // Build warnings list from brand errors
+  const warnings = [];
+  if (brandResults.lawnstarter.status === BRAND_STATUS.ERROR) {
+    warnings.push(`LawnStarter: ${brandResults.lawnstarter.error}`);
+  }
+  if (brandResults.lawnlove.status === BRAND_STATUS.ERROR) {
+    warnings.push(`Lawn Love: ${brandResults.lawnlove.error}`);
+  }
+
+  if (warnings.length > 0) {
+    console.warn('Partial fetch errors:', warnings);
   }
 
   return {
     studies: uniqueStudies,
     timestamp: timestamp,
-    warnings: errors.length > 0 ? errors : null,
+    warnings: warnings.length > 0 ? warnings : null,
+    brandResults: brandResults,
   };
+};
+
+// Retry fetching only Lawn Love studies
+export const retryLawnLove = async (currentStudies, onProgress, onBrandStatus) => {
+  if (onBrandStatus) onBrandStatus('lawnlove', BRAND_STATUS.LOADING);
+  if (onProgress) onProgress('Retrying Lawn Love studies via API...');
+
+  try {
+    let lawnloveStudies = [];
+
+    // Try the serverless API first
+    try {
+      lawnloveStudies = await fetchLawnLoveViaApi();
+      if (onProgress) onProgress(`Found ${lawnloveStudies.length} Lawn Love studies via API`);
+    } catch (apiError) {
+      console.warn('Lawn Love API retry failed, trying CORS proxy:', apiError);
+      if (onProgress) onProgress('API failed, trying CORS proxy...');
+
+      // Fall back to CORS proxy
+      lawnloveStudies = await fetchAllPages(
+        CATEGORY_URLS.lawnlove,
+        'Lawn Love',
+        parseLawnLovePage
+      );
+    }
+
+    if (onBrandStatus) onBrandStatus('lawnlove', BRAND_STATUS.SUCCESS);
+
+    // Merge with existing studies (remove old Lawn Love studies first)
+    const filteredStudies = currentStudies.filter(s => s.brand !== 'Lawn Love');
+    const allStudies = [...filteredStudies, ...lawnloveStudies];
+
+    // Deduplicate
+    const uniqueStudies = [];
+    const seenUrls = new Set();
+    allStudies.forEach(study => {
+      const normalizedUrl = study.url.replace(/\/$/, '').toLowerCase();
+      if (!seenUrls.has(normalizedUrl)) {
+        seenUrls.add(normalizedUrl);
+        uniqueStudies.push(study);
+      }
+    });
+
+    // Sort by publish date
+    uniqueStudies.sort((a, b) => {
+      if (!a.publishDate && !b.publishDate) return 0;
+      if (!a.publishDate) return 1;
+      if (!b.publishDate) return -1;
+      return new Date(b.publishDate) - new Date(a.publishDate);
+    });
+
+    // Update cache
+    const timestamp = saveCachedArchive(uniqueStudies);
+
+    return {
+      studies: uniqueStudies,
+      timestamp: timestamp,
+      lawnloveCount: lawnloveStudies.length,
+      success: true,
+    };
+  } catch (error) {
+    console.error('Lawn Love retry failed:', error);
+    if (onBrandStatus) onBrandStatus('lawnlove', BRAND_STATUS.ERROR, error.message);
+
+    return {
+      studies: currentStudies,
+      success: false,
+      error: error.message,
+    };
+  }
 };
 
 // Match scraped studies with Google Sheet data
