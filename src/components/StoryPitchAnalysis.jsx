@@ -194,6 +194,7 @@ export default function StoryPitchAnalysis() {
           results.ga4 = await fetchGA4MetricsForUrl(token, ga4Property, story.study_url);
         } catch (err) {
           console.error('GA4 fetch error:', err);
+          results.ga4Error = err.message;
         }
       }
 
@@ -1168,6 +1169,14 @@ export default function StoryPitchAnalysis() {
                   </div>
                 ) : !storyMetrics?.ga4Property ? (
                   <p className="text-sm text-gray-500 py-2">No GA4 property configured for brand "{selectedStory.brand}". Set VITE_{selectedStory.brand?.toUpperCase().replace(/\s/g, '')}_GA4_PROPERTY.</p>
+                ) : storyMetrics?.ga4Error ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                    <AlertCircle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-amber-700 font-medium">Unable to load Analytics data</p>
+                      <p className="text-sm text-amber-600">{storyMetrics.ga4Error}</p>
+                    </div>
+                  </div>
                 ) : storyMetrics?.ga4 ? (
                   <div className="grid grid-cols-4 gap-4">
                     <div className="bg-gray-50 rounded-lg p-3">
