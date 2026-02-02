@@ -14,8 +14,9 @@ import {
   isSameDay,
   isWithinInterval,
   parseISO,
+  differenceInDays,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle, Bell, BellOff, FilePlus, ExternalLink, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle, Bell, BellOff, FilePlus, ExternalLink, Loader2, Building2, Flame, CheckCircle, HelpCircle, XCircle, Newspaper } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
 import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
@@ -40,6 +41,31 @@ const STORAGE_KEYS = {
   eventOverrides: 'editorial-event-overrides',
   customStories: 'editorial-custom-stories',
   customOOO: 'editorial-custom-ooo',
+  competitorLog: 'editorial-competitor-log',
+};
+
+// Helper to get competitor entries for a specific story
+const getCompetitorEntriesForStory = (storyId) => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.competitorLog);
+    if (!stored) return [];
+    const entries = JSON.parse(stored);
+    return entries.filter(entry => entry.linkedStoryId === storyId);
+  } catch {
+    return [];
+  }
+};
+
+// Helper to check if a date is recent (within last N days)
+const isRecentDate = (dateStr, days = 60) => {
+  if (!dateStr) return false;
+  try {
+    const date = parseISO(dateStr);
+    const diffDays = differenceInDays(new Date(), date);
+    return diffDays >= 0 && diffDays <= days;
+  } catch {
+    return false;
+  }
 };
 
 // Custom quarter definitions
@@ -1241,6 +1267,141 @@ export default function ContentCalendar() {
                   )}
                 </>
               )}
+
+              {/* Competitor Intel Section */}
+              {(() => {
+                const competitorEntries = getCompetitorEntriesForStory(selectedEvent.id);
+                if (competitorEntries.length === 0) return null;
+
+                const withCoverage = competitorEntries.filter(e => e.gotCoverage === 'yes').length;
+                const totalWithCoverageInfo = competitorEntries.filter(e => e.gotCoverage === 'yes' || e.gotCoverage === 'no').length;
+
+                // Find most recent competitor piece
+                let mostRecentDays = null;
+                competitorEntries.forEach(entry => {
+                  if (entry.publishDate) {
+                    try {
+                      const days = differenceInDays(new Date(), parseISO(entry.publishDate));
+                      if (days >= 0 && (mostRecentDays === null || days < mostRecentDays)) {
+                        mostRecentDays = days;
+                      }
+                    } catch {}
+                  }
+                });
+
+                return (
+                  <div className="mt-4 pt-4 border-t">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <Building2 size={16} className="text-ls-green" />
+                        COMPETITOR INTEL ({competitorEntries.length} logged)
+                      </h4>
+                    </div>
+
+                    {/* Quick Insights */}
+                    <div className="bg-gray-50 rounded-lg p-3 mb-3 text-xs space-y-1">
+                      {mostRecentDays !== null && (
+                        <div className="flex items-center gap-2">
+                          <Flame size={12} className="text-orange-500" />
+                          <span className="text-gray-600">Most recent competitor piece:</span>
+                          <span className="font-medium text-gray-900">
+                            {mostRecentDays === 0 ? 'Today' : `${mostRecentDays} days ago`}
+                          </span>
+                        </div>
+                      )}
+                      {totalWithCoverageInfo > 0 && (
+                        <div className="flex items-center gap-2">
+                          <Newspaper size={12} className="text-ls-green" />
+                          <span className="text-gray-600">Got news coverage:</span>
+                          <span className="font-medium text-gray-900">
+                            {withCoverage} of {totalWithCoverageInfo} ({Math.round((withCoverage / totalWithCoverageInfo) * 100)}%)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Competitor Entries Table */}
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="text-left px-2 py-2 font-medium text-gray-600">Piece</th>
+                            <th className="text-left px-2 py-2 font-medium text-gray-600">Published</th>
+                            <th className="text-left px-2 py-2 font-medium text-gray-600">Coverage</th>
+                            <th className="text-left px-2 py-2 font-medium text-gray-600">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {competitorEntries.slice(0, 5).map(entry => {
+                            const recent = isRecentDate(entry.publishDate, 60);
+                            return (
+                              <tr key={entry.id} className="hover:bg-gray-50">
+                                <td className="px-2 py-2">
+                                  <div className="flex flex-col gap-0.5">
+                                    {entry.publisher && (
+                                      <span className="text-ls-green font-medium">{entry.publisher}:</span>
+                                    )}
+                                    <a
+                                      href={entry.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-gray-900 hover:text-ls-green truncate max-w-[120px] block"
+                                      title={entry.title || entry.url}
+                                    >
+                                      "{entry.title || 'Untitled'}"
+                                    </a>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-gray-700">
+                                      {entry.publishDate ? format(parseISO(entry.publishDate), 'MMM yyyy') : '-'}
+                                    </span>
+                                    {recent && (
+                                      <span className="inline-flex items-center gap-0.5 text-orange-600">
+                                        <Flame size={10} />
+                                        Recent
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2">
+                                  {entry.gotCoverage === 'yes' ? (
+                                    <span className="inline-flex items-center gap-0.5 text-green-600">
+                                      <CheckCircle size={12} />
+                                      Yes
+                                    </span>
+                                  ) : entry.gotCoverage === 'no' ? (
+                                    <span className="inline-flex items-center gap-0.5 text-gray-500">
+                                      <XCircle size={12} />
+                                      No
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-0.5 text-yellow-600">
+                                      <HelpCircle size={12} />
+                                      ?
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-2">
+                                  <span className="text-gray-500 line-clamp-2">
+                                    {entry.qualityNotes || entry.coverageNotes || '-'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {competitorEntries.length > 5 && (
+                      <p className="text-xs text-gray-500 mt-2 text-center">
+                        +{competitorEntries.length - 5} more entries in Competitor Log
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Actions */}
