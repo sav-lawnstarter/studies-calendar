@@ -20,6 +20,11 @@ import {
   FileText,
   MousePointerClick,
   Globe,
+  Activity,
+  Timer,
+  ArrowDown,
+  MapPin,
+  Share2,
 } from 'lucide-react';
 import {
   getCachedArchive,
@@ -39,10 +44,13 @@ import {
 import {
   fetchSearchConsoleWithComparison,
   batchFetchSearchConsoleMetrics,
+  fetchGA4MetricsForUrl,
+  fetchGA4ReaderInsightsForUrl,
   getPropertiesForBrand,
   formatNumber,
   formatPercent,
   formatPosition,
+  formatEngagementTime,
   getChangeClass,
   getChangeArrow,
 } from '../utils/googleAnalytics';
@@ -90,6 +98,12 @@ export default function StoryArchive() {
   // GSC summary data for cards (URL -> metrics map)
   const [gscSummaryData, setGscSummaryData] = useState({});
   const [isLoadingGscSummary, setIsLoadingGscSummary] = useState(false);
+
+  // Google Analytics 4 data for modal
+  const [ga4Data, setGa4Data] = useState(null);
+  const [ga4Insights, setGa4Insights] = useState(null);
+  const [isLoadingGa4, setIsLoadingGa4] = useState(false);
+  const [ga4Error, setGa4Error] = useState(null);
 
   // Get available years for filter
   const availableYears = useMemo(() => {
@@ -216,14 +230,59 @@ export default function StoryArchive() {
     }
   }, []);
 
-  // Load GSC data when a study is selected
+  // Fetch Google Analytics 4 data when a study is selected
+  const fetchGa4Data = useCallback(async (study) => {
+    if (!study || !study.url) return;
+
+    const { ga4Property } = getPropertiesForBrand(study.brand);
+    if (!ga4Property) {
+      setGa4Error('Google Analytics not configured for this brand');
+      return;
+    }
+
+    let token = getStoredToken();
+    if (!token) {
+      try {
+        token = await authenticateWithGoogle(clientId);
+      } catch (err) {
+        setGa4Error('Authentication required');
+        return;
+      }
+    }
+
+    setIsLoadingGa4(true);
+    setGa4Error(null);
+
+    try {
+      // Fetch both metrics and insights in parallel
+      const [metrics, insights] = await Promise.all([
+        fetchGA4MetricsForUrl(token, ga4Property, study.url),
+        fetchGA4ReaderInsightsForUrl(token, ga4Property, study.url),
+      ]);
+      setGa4Data(metrics);
+      setGa4Insights(insights);
+    } catch (err) {
+      console.error('Error fetching GA4 data:', err);
+      setGa4Error(err.message || 'Failed to load Analytics data');
+      setGa4Data(null);
+      setGa4Insights(null);
+    } finally {
+      setIsLoadingGa4(false);
+    }
+  }, []);
+
+  // Load GSC and GA4 data when a study is selected
   useEffect(() => {
     if (selectedStudy) {
       setGscData(null);
       setGscError(null);
+      setGa4Data(null);
+      setGa4Insights(null);
+      setGa4Error(null);
       fetchGscData(selectedStudy);
+      fetchGa4Data(selectedStudy);
     }
-  }, [selectedStudy, fetchGscData]);
+  }, [selectedStudy, fetchGscData, fetchGa4Data]);
 
   // Helper to normalize URLs for comparison
   const normalizeUrl = (url) => {
@@ -924,6 +983,127 @@ export default function StoryArchive() {
                 </div>
               )}
             </div>
+
+            {/* Site Analytics (Google Analytics 4) */}
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                Site Analytics
+                <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
+              </h3>
+              {isLoadingGa4 ? (
+                <div className="bg-gray-50 rounded-lg p-6 text-center">
+                  <Loader2 size={24} className="animate-spin text-ls-green mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">Loading Analytics data...</p>
+                </div>
+              ) : ga4Error ? (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-gray-500 text-center text-sm">
+                    {ga4Error}
+                  </p>
+                  <button
+                    onClick={() => fetchGa4Data(selectedStudy)}
+                    className="mt-2 mx-auto block text-ls-green hover:text-ls-green-light text-sm font-medium"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : ga4Data ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* Page Views */}
+                  <div className="bg-indigo-50 rounded-lg p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 text-indigo-600 mb-1">
+                      <Eye size={16} />
+                    </div>
+                    <p className="text-2xl font-bold text-indigo-600">
+                      {formatNumber(ga4Data.pageViews)}
+                    </p>
+                    <p className="text-xs text-gray-600">Page Views</p>
+                  </div>
+                  {/* Engaged Sessions */}
+                  <div className="bg-teal-50 rounded-lg p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 text-teal-600 mb-1">
+                      <Activity size={16} />
+                    </div>
+                    <p className="text-2xl font-bold text-teal-600">
+                      {formatNumber(ga4Data.engagedSessions)}
+                    </p>
+                    <p className="text-xs text-gray-600">Engaged Sessions</p>
+                  </div>
+                  {/* Avg Engagement Time */}
+                  <div className="bg-amber-50 rounded-lg p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 text-amber-600 mb-1">
+                      <Timer size={16} />
+                    </div>
+                    <p className="text-2xl font-bold text-amber-600">
+                      {formatEngagementTime(ga4Data.avgEngagementTime)}
+                    </p>
+                    <p className="text-xs text-gray-600">Avg Time on Page</p>
+                  </div>
+                  {/* Scroll Depth */}
+                  <div className="bg-rose-50 rounded-lg p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 text-rose-600 mb-1">
+                      <ArrowDown size={16} />
+                    </div>
+                    <p className="text-2xl font-bold text-rose-600">
+                      {ga4Data.scrollDepth > 0 ? `${ga4Data.scrollDepth.toFixed(0)}%` : '-'}
+                    </p>
+                    <p className="text-xs text-gray-600">Scroll Depth</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-gray-500 text-center text-sm">
+                    No Analytics data available.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Reader Insights */}
+            {ga4Insights && (ga4Insights.topCities?.length > 0 || ga4Insights.trafficSources?.length > 0) && (
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                  Reader Insights
+                  <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Top Cities */}
+                  {ga4Insights.topCities?.length > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <MapPin size={16} className="text-gray-600" />
+                        <span className="text-sm font-medium text-gray-700">Top Cities</span>
+                      </div>
+                      <div className="space-y-2">
+                        {ga4Insights.topCities.map((city, index) => (
+                          <div key={index} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600">{city.city}</span>
+                            <span className="font-medium text-gray-900">{formatNumber(city.users)} users</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Traffic Sources */}
+                  {ga4Insights.trafficSources?.length > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Share2 size={16} className="text-gray-600" />
+                        <span className="text-sm font-medium text-gray-700">Traffic Sources</span>
+                      </div>
+                      <div className="space-y-2">
+                        {ga4Insights.trafficSources.map((source, index) => (
+                          <div key={index} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600">{source.source}</span>
+                            <span className="font-medium text-gray-900">{formatNumber(source.sessions)} sessions</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Performance Data */}
             {selectedStudy.hasSheetData ? (
