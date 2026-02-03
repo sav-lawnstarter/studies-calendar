@@ -14,35 +14,22 @@ import {
   HelpCircle,
   XCircle,
   Link2,
-  ChevronDown,
   Trash2,
   Edit3,
   RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
-import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
-import { format, parseISO, differenceInDays, isAfter, isBefore } from 'date-fns';
-
-// localStorage key for competitor entries
-const STORAGE_KEY = 'editorial-competitor-log';
-
-// Load data from localStorage
-const loadFromStorage = (key, defaultValue) => {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : defaultValue;
-  } catch {
-    return defaultValue;
-  }
-};
-
-// Save data to localStorage
-const saveToStorage = (key, value) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error('Failed to save to localStorage:', e);
-  }
-};
+import {
+  getStoredToken,
+  fetchContentCalendarData,
+  loadGoogleScript,
+  authenticateWithGoogle,
+  fetchCompetitorLogData,
+  appendCompetitorLog,
+  updateCompetitorLog,
+  deleteCompetitorLog,
+} from '../utils/googleSheets';
+import { format, parseISO, differenceInDays } from 'date-fns';
 
 // Check if a date is within the last N days
 const isRecent = (dateStr, days = 60) => {
@@ -77,8 +64,11 @@ const formatFullDate = (dateStr) => {
 };
 
 export default function CompetitorLog() {
-  // Competitor entries state
-  const [entries, setEntries] = useState(() => loadFromStorage(STORAGE_KEY, []));
+  // Competitor entries state from Google Sheets
+  const [entries, setEntries] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState(null);
 
   // Content Calendar stories for linking
   const [calendarStories, setCalendarStories] = useState([]);
@@ -97,11 +87,6 @@ export default function CompetitorLog() {
   const [showFilters, setShowFilters] = useState(false);
 
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-
-  // Save entries to localStorage whenever they change
-  useEffect(() => {
-    saveToStorage(STORAGE_KEY, entries);
-  }, [entries]);
 
   // Fetch Content Calendar stories
   const fetchStories = useCallback(async () => {
@@ -138,45 +123,142 @@ export default function CompetitorLog() {
     }
   }, [clientId]);
 
-  // Load stories on mount
+  // Fetch competitor log entries from Google Sheets
+  const fetchEntries = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      let token = getStoredToken();
+
+      if (!token) {
+        if (clientId) {
+          await loadGoogleScript();
+          token = await authenticateWithGoogle(clientId);
+        } else {
+          throw new Error('Google Client ID not configured');
+        }
+      }
+
+      const data = await fetchCompetitorLogData(token);
+      setEntries(data);
+    } catch (err) {
+      console.error('Error fetching competitor log:', err);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clientId]);
+
+  // Load data on mount
   useEffect(() => {
     fetchStories();
-  }, [fetchStories]);
-
-  // Add a new entry
-  const handleAddEntry = (entryData) => {
-    const newEntry = {
-      id: `competitor-${Date.now()}`,
-      dateAdded: new Date().toISOString().split('T')[0],
-      ...entryData,
-    };
-    setEntries((prev) => [newEntry, ...prev]);
-    setShowAddModal(false);
-  };
-
-  // Update an existing entry
-  const handleUpdateEntry = (entryData) => {
-    setEntries((prev) =>
-      prev.map((entry) =>
-        entry.id === editingEntry.id ? { ...entry, ...entryData } : entry
-      )
-    );
-    setEditingEntry(null);
-    setShowAddModal(false);
-  };
-
-  // Delete an entry
-  const handleDeleteEntry = (entryId) => {
-    if (window.confirm('Are you sure you want to delete this competitor entry?')) {
-      setEntries((prev) => prev.filter((entry) => entry.id !== entryId));
-    }
-  };
+    fetchEntries();
+  }, [fetchStories, fetchEntries]);
 
   // Get story title by ID
   const getStoryTitle = (storyId) => {
     if (!storyId || storyId === 'none') return null;
     const story = calendarStories.find((s) => s.id === storyId);
     return story?.story_title || story?.news_peg || story?.brand || 'Unknown Story';
+  };
+
+  // Get story title from entry (either from linkedStory string or linkedStoryId)
+  const getEntryStoryTitle = (entry) => {
+    // If we have a linkedStory string from the sheet, use that directly
+    if (entry.linkedStory) {
+      return entry.linkedStory;
+    }
+    // Fallback to looking up by ID (for backwards compatibility)
+    return getStoryTitle(entry.linkedStoryId);
+  };
+
+  // Add a new entry
+  const handleAddEntry = async (entryData) => {
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const token = getStoredToken();
+      if (!token) {
+        throw new Error('Not authenticated. Please refresh the page.');
+      }
+
+      // Get the story title for the linked story
+      const linkedStoryTitle = getStoryTitle(entryData.linkedStoryId) || '';
+
+      const newEntry = {
+        ...entryData,
+        dateAdded: new Date().toISOString().split('T')[0],
+      };
+
+      await appendCompetitorLog(token, newEntry, linkedStoryTitle);
+      setShowAddModal(false);
+      await fetchEntries();
+    } catch (err) {
+      console.error('Error adding competitor entry:', err);
+      setError(`Failed to save: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Update an existing entry
+  const handleUpdateEntry = async (entryData) => {
+    if (!editingEntry) return;
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const token = getStoredToken();
+      if (!token) {
+        throw new Error('Not authenticated. Please refresh the page.');
+      }
+
+      // Get the story title for the linked story
+      const linkedStoryTitle = getStoryTitle(entryData.linkedStoryId) || '';
+
+      const updatedEntry = {
+        ...entryData,
+        dateAdded: editingEntry.dateAdded,
+      };
+
+      await updateCompetitorLog(token, editingEntry.rowIndex, updatedEntry, linkedStoryTitle);
+      setEditingEntry(null);
+      setShowAddModal(false);
+      await fetchEntries();
+    } catch (err) {
+      console.error('Error updating competitor entry:', err);
+      setError(`Failed to update: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Delete an entry
+  const handleDeleteEntry = async (entry) => {
+    if (!window.confirm('Are you sure you want to delete this competitor entry?')) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const token = getStoredToken();
+      if (!token) {
+        throw new Error('Not authenticated. Please refresh the page.');
+      }
+
+      await deleteCompetitorLog(token, entry.rowIndex);
+      await fetchEntries();
+    } catch (err) {
+      console.error('Error deleting competitor entry:', err);
+      setError(`Failed to delete: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Filter entries
@@ -190,16 +272,19 @@ export default function CompetitorLog() {
           entry.publisher?.toLowerCase().includes(query) ||
           entry.coverageNotes?.toLowerCase().includes(query) ||
           entry.qualityNotes?.toLowerCase().includes(query) ||
-          entry.url?.toLowerCase().includes(query);
+          entry.url?.toLowerCase().includes(query) ||
+          entry.linkedStory?.toLowerCase().includes(query);
         if (!matchesSearch) return false;
       }
 
       // Linked story filter
       if (filterLinkedStory !== 'all') {
         if (filterLinkedStory === 'unlinked') {
-          if (entry.linkedStoryId && entry.linkedStoryId !== 'none') return false;
+          if (entry.linkedStory && entry.linkedStory.trim()) return false;
         } else {
-          if (entry.linkedStoryId !== filterLinkedStory) return false;
+          // Match by story title
+          const storyTitle = getStoryTitle(filterLinkedStory);
+          if (entry.linkedStory !== storyTitle) return false;
         }
       }
 
@@ -229,7 +314,7 @@ export default function CompetitorLog() {
 
       return true;
     });
-  }, [entries, searchQuery, filterLinkedStory, filterCoverage, filterDateRange]);
+  }, [entries, searchQuery, filterLinkedStory, filterCoverage, filterDateRange, calendarStories]);
 
   // Calculate Quick Insights
   const quickInsights = useMemo(() => {
@@ -265,18 +350,17 @@ export default function CompetitorLog() {
 
   // Get unique linked stories for filter dropdown
   const linkedStoryOptions = useMemo(() => {
-    const storyIds = new Set(
+    const storyTitles = new Set(
       entries
-        .filter((e) => e.linkedStoryId && e.linkedStoryId !== 'none')
-        .map((e) => e.linkedStoryId)
+        .filter((e) => e.linkedStory && e.linkedStory.trim())
+        .map((e) => e.linkedStory)
     );
-    return calendarStories.filter((s) => storyIds.has(s.id));
+    // Return calendar stories that have been linked
+    return calendarStories.filter((s) => {
+      const title = s.story_title || s.news_peg || s.brand;
+      return storyTitles.has(title);
+    });
   }, [entries, calendarStories]);
-
-  // Get entries for a specific story
-  const getEntriesForStory = (storyId) => {
-    return entries.filter((e) => e.linkedStoryId === storyId);
-  };
 
   // Open Google News search for an entry
   const openNewsSearch = (entry) => {
@@ -318,12 +402,26 @@ export default function CompetitorLog() {
     const [title, setTitle] = useState(editingEntry?.title || '');
     const [publisher, setPublisher] = useState(editingEntry?.publisher || '');
     const [publishDate, setPublishDate] = useState(editingEntry?.publishDate || '');
-    const [linkedStoryId, setLinkedStoryId] = useState(editingEntry?.linkedStoryId || 'none');
+    const [linkedStoryId, setLinkedStoryId] = useState('none');
     const [gotCoverage, setGotCoverage] = useState(editingEntry?.gotCoverage || 'not_sure');
     const [coverageNotes, setCoverageNotes] = useState(editingEntry?.coverageNotes || '');
     const [qualityNotes, setQualityNotes] = useState(editingEntry?.qualityNotes || '');
     const [isScrapingUrl, setIsScrapingUrl] = useState(false);
     const [scrapeError, setScrapeError] = useState(null);
+
+    // Initialize linkedStoryId when editing
+    useEffect(() => {
+      if (editingEntry?.linkedStory) {
+        // Find the story ID by matching the title
+        const matchingStory = calendarStories.find((s) => {
+          const title = s.story_title || s.news_peg || s.brand;
+          return title === editingEntry.linkedStory;
+        });
+        if (matchingStory) {
+          setLinkedStoryId(matchingStory.id);
+        }
+      }
+    }, [editingEntry, calendarStories]);
 
     // Auto-fill from URL
     const handleUrlPaste = async (newUrl) => {
@@ -427,7 +525,7 @@ export default function CompetitorLog() {
             {/* Your Story Dropdown */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Your Story (optional)
+                Linked Story (optional)
               </label>
               <select
                 value={linkedStoryId}
@@ -601,9 +699,10 @@ export default function CompetitorLog() {
           <div className="p-4 border-t bg-gray-50 rounded-b-xl">
             <button
               onClick={handleSubmit}
-              disabled={!url.trim()}
-              className="w-full px-4 py-2 bg-ls-green text-white font-medium rounded-lg hover:bg-ls-green-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              disabled={!url.trim() || isSaving}
+              className="w-full px-4 py-2 bg-ls-green text-white font-medium rounded-lg hover:bg-ls-green-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
+              {isSaving && <Loader2 size={16} className="animate-spin" />}
               {editingEntry ? 'Save Changes' : 'Add Competitor Piece'}
             </button>
           </div>
@@ -614,7 +713,7 @@ export default function CompetitorLog() {
 
   // Entry Card Component
   const EntryCard = ({ entry }) => {
-    const linkedStory = getStoryTitle(entry.linkedStoryId);
+    const linkedStory = getEntryStoryTitle(entry);
     const recent = isRecent(entry.publishDate, 60);
 
     return (
@@ -697,14 +796,16 @@ export default function CompetitorLog() {
                 setEditingEntry(entry);
                 setShowAddModal(true);
               }}
-              className="flex items-center justify-center w-8 h-8 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+              disabled={isSaving}
+              className="flex items-center justify-center w-8 h-8 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
               title="Edit"
             >
               <Edit3 size={14} />
             </button>
             <button
-              onClick={() => handleDeleteEntry(entry.id)}
-              className="flex items-center justify-center w-8 h-8 border border-red-300 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+              onClick={() => handleDeleteEntry(entry)}
+              disabled={isSaving}
+              className="flex items-center justify-center w-8 h-8 border border-red-300 rounded-lg text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
               title="Delete"
             >
               <Trash2 size={14} />
@@ -717,6 +818,15 @@ export default function CompetitorLog() {
 
   // Table View Component
   const TableView = () => {
+    if (isLoading) {
+      return (
+        <div className="text-center py-12 bg-white rounded-xl border">
+          <Loader2 size={48} className="mx-auto text-ls-green mb-4 animate-spin" />
+          <p className="text-gray-500">Loading competitor log from Google Sheets...</p>
+        </div>
+      );
+    }
+
     if (filteredEntries.length === 0) {
       return (
         <div className="text-center py-12 bg-white rounded-xl border">
@@ -761,7 +871,7 @@ export default function CompetitorLog() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredEntries.map((entry) => {
-                const linkedStory = getStoryTitle(entry.linkedStoryId);
+                const linkedStory = getEntryStoryTitle(entry);
                 const recent = isRecent(entry.publishDate, 60);
 
                 return (
@@ -838,14 +948,16 @@ export default function CompetitorLog() {
                             setEditingEntry(entry);
                             setShowAddModal(true);
                           }}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                          disabled={isSaving}
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
                           title="Edit"
                         >
                           <Edit3 size={14} />
                         </button>
                         <button
-                          onClick={() => handleDeleteEntry(entry.id)}
-                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          onClick={() => handleDeleteEntry(entry)}
+                          disabled={isSaving}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
                           title="Delete"
                         >
                           <Trash2 size={14} />
@@ -906,17 +1018,21 @@ export default function CompetitorLog() {
             )}
           </button>
 
-          {/* Refresh Stories */}
+          {/* Refresh */}
           <button
-            onClick={fetchStories}
-            disabled={isLoadingStories}
+            onClick={() => {
+              fetchStories();
+              fetchEntries();
+            }}
+            disabled={isLoading || isLoadingStories}
             className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-            title="Refresh linked stories from Content Calendar"
+            title="Refresh from Google Sheets"
           >
             <RefreshCw
               size={18}
-              className={isLoadingStories ? 'animate-spin' : ''}
+              className={isLoading || isLoadingStories ? 'animate-spin' : ''}
             />
+            Refresh
           </button>
 
           {/* Add Entry */}
@@ -932,6 +1048,19 @@ export default function CompetitorLog() {
           </button>
         </div>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-start gap-3">
+          <AlertCircle size={20} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
+            <X size={18} />
+          </button>
+        </div>
+      )}
 
       {/* Filters Panel */}
       {showFilters && (
@@ -1055,7 +1184,7 @@ export default function CompetitorLog() {
       )}
 
       {/* Results count */}
-      {entries.length > 0 && (
+      {entries.length > 0 && !isLoading && (
         <div className="mb-4 text-sm text-gray-500">
           Showing {filteredEntries.length} of {entries.length} entries
         </div>
