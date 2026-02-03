@@ -19,7 +19,7 @@ import {
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle, Bell, BellOff, FilePlus, ExternalLink, Loader2, Building2, Flame, CheckCircle, HelpCircle, XCircle, Newspaper } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
-import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle } from '../utils/googleSheets';
+import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle, fetchStoryIdeationData, appendStoryIdeation } from '../utils/googleSheets';
 import { fetchTeamOOOEvents, hasTeamCalendarsConfigured } from '../utils/googleCalendar';
 import {
   isNotificationSupported,
@@ -186,6 +186,12 @@ export default function ContentCalendar() {
   const [isLoadingGoogleOOO, setIsLoadingGoogleOOO] = useState(false);
   const [googleOOOError, setGoogleOOOError] = useState(null);
 
+  // Story Ideation data from Google Sheets (shown in yellow)
+  const [sheetStoryIdeation, setSheetStoryIdeation] = useState([]);
+  const [isLoadingStoryIdeation, setIsLoadingStoryIdeation] = useState(false);
+  const [storyIdeationError, setStoryIdeationError] = useState(null);
+  const [isSavingStoryIdeation, setIsSavingStoryIdeation] = useState(false);
+
   // Notification state
   const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
   const [notificationSettings, setNotificationSettings] = useState(() => getNotificationSettings());
@@ -297,13 +303,37 @@ export default function ContentCalendar() {
     }
   }, []);
 
-  // Combined refresh function for both Content Calendar and Google OOO
+  // Fetch Story Ideation data from Google Sheets
+  const fetchStoryIdeation = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) {
+      // No token, can't fetch - user needs to sign in
+      console.log('Story Ideation: No token available');
+      return;
+    }
+
+    setIsLoadingStoryIdeation(true);
+    setStoryIdeationError(null);
+
+    try {
+      const data = await fetchStoryIdeationData(token);
+      setSheetStoryIdeation(data);
+    } catch (err) {
+      console.error('Story Ideation fetch error:', err);
+      setStoryIdeationError(err.message);
+    } finally {
+      setIsLoadingStoryIdeation(false);
+    }
+  }, []);
+
+  // Combined refresh function for Content Calendar, Google OOO, and Story Ideation
   const handleRefreshAll = useCallback(() => {
     fetchContentCalendar();
     fetchGoogleOOO();
-  }, [fetchContentCalendar, fetchGoogleOOO]);
+    fetchStoryIdeation();
+  }, [fetchContentCalendar, fetchGoogleOOO, fetchStoryIdeation]);
 
-  // Load Content Calendar data and OOO on mount
+  // Load Content Calendar data, OOO, and Story Ideation on mount
   useEffect(() => {
     handleRefreshAll();
   }, [handleRefreshAll]);
@@ -342,12 +372,23 @@ export default function ContentCalendar() {
       }
     });
 
-    // Add story ideation entries (YELLOW) - custom stories added via Add Story button
+    // Add story ideation entries (YELLOW) - from Google Sheets Story Ideation tab
+    sheetStoryIdeation.forEach((story) => {
+      if (story.pitchDate && !hiddenEvents.includes(story.id)) {
+        events.push({
+          ...story,
+          date: story.pitchDate,
+          displayType: 'storyIdeation',
+        });
+      }
+    });
+
+    // Also add any local custom stories (for backwards compatibility during transition)
     customStories.forEach((story) => {
       if (!hiddenEvents.includes(story.id)) {
         events.push({
           ...story,
-          date: story.pitchDate, // Use pitchDate instead of publishDate
+          date: story.pitchDate,
           displayType: 'storyIdeation',
         });
       }
@@ -417,7 +458,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [contentCalendarData, customStories, customOOO, googleCalendarOOO, customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [contentCalendarData, sheetStoryIdeation, customStories, customOOO, googleCalendarOOO, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Handle notification permission request
   const handleEnableNotifications = async () => {
@@ -618,15 +659,35 @@ export default function ContentCalendar() {
     setHiddenEvents(prev => prev.filter(id => id !== eventId));
   };
 
-  // Add a new story ideation entry
-  const handleAddStory = (storyData) => {
-    const newStory = {
-      id: `story-ideation-${Date.now()}`,
-      ...storyData,
-      type: 'storyIdeation',
-    };
-    setCustomStories(prev => [...prev, newStory]);
-    setShowAddStoryModal(false);
+  // Add a new story ideation entry to Google Sheets
+  const handleAddStory = async (storyData) => {
+    const token = getStoredToken();
+    if (!token) {
+      alert('Not authenticated. Please refresh the page and sign in.');
+      return;
+    }
+
+    setIsSavingStoryIdeation(true);
+    try {
+      const entry = {
+        title: storyData.title,
+        description: storyData.description,
+        metrics: storyData.potentialMetrics,
+        newsPeg: storyData.newsPeg,
+        pitchDate: storyData.pitchDate,
+        dateAdded: new Date().toISOString().split('T')[0],
+      };
+
+      await appendStoryIdeation(token, entry);
+      setShowAddStoryModal(false);
+      // Refresh story ideation data from sheet
+      await fetchStoryIdeation();
+    } catch (err) {
+      console.error('Error adding story ideation:', err);
+      alert(`Failed to save story idea: ${err.message}`);
+    } finally {
+      setIsSavingStoryIdeation(false);
+    }
   };
 
   // Add a new OOO
@@ -882,15 +943,21 @@ export default function ContentCalendar() {
       setPitchDate(format(currentDate, 'yyyy-MM-dd'));
     };
 
+    const handleClose = () => {
+      if (!isSavingStoryIdeation) {
+        setShowAddStoryModal(false);
+      }
+    };
+
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddStoryModal(false)}>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleClose}>
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Add Story Ideation</h3>
-              <p className="text-xs text-gray-500">Story ideas are shown in yellow on the calendar</p>
+              <p className="text-xs text-gray-500">Story ideas are saved to Google Sheets and shown in yellow on the calendar</p>
             </div>
-            <button onClick={() => setShowAddStoryModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+            <button onClick={handleClose} disabled={isSavingStoryIdeation} className="p-1 hover:bg-gray-100 rounded-lg disabled:opacity-50">
               <X size={20} className="text-gray-500" />
             </button>
           </div>
@@ -952,10 +1019,11 @@ export default function ContentCalendar() {
           <div className="p-4 border-t bg-yellow-50 rounded-b-xl">
             <button
               onClick={handleSubmit}
-              disabled={!title.trim() || !pitchDate}
-              className="w-full px-4 py-2 bg-yellow-400 text-yellow-900 font-medium rounded-lg hover:bg-yellow-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!title.trim() || !pitchDate || isSavingStoryIdeation}
+              className="w-full px-4 py-2 bg-yellow-400 text-yellow-900 font-medium rounded-lg hover:bg-yellow-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Add Story Ideation
+              {isSavingStoryIdeation && <Loader2 size={16} className="animate-spin" />}
+              {isSavingStoryIdeation ? 'Saving...' : 'Add Story Ideation'}
             </button>
           </div>
         </div>
