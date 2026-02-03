@@ -193,7 +193,7 @@ export const fetchGA4Metrics = async (accessToken, propertyId, pagePath, startDa
       dateRanges: [{ startDate, endDate }],
       dimensions: [{ name: 'pagePath' }],
       metrics: [
-        { name: 'entrances' },
+        { name: 'screenPageViews' },
         { name: 'engagedSessions' },
         { name: 'averageSessionDuration' },
         { name: 'scrolledUsers' },
@@ -231,14 +231,14 @@ export const fetchGA4Metrics = async (accessToken, propertyId, pagePath, startDa
     const scrolledUsers = parseFloat(metrics[3]?.value) || 0;
 
     return {
-      entrances: parseInt(metrics[0]?.value) || 0,
+      pageViews: parseInt(metrics[0]?.value) || 0,
       engagedSessions: parseInt(metrics[1]?.value) || 0,
       avgEngagementTime: parseFloat(metrics[2]?.value) || 0,
       scrollDepth: totalUsers > 0 ? (scrolledUsers / totalUsers * 100) : 0,
     };
   }
 
-  return { entrances: 0, engagedSessions: 0, avgEngagementTime: 0, scrollDepth: 0 };
+  return { pageViews: 0, engagedSessions: 0, avgEngagementTime: 0, scrollDepth: 0 };
 };
 
 // Fetch GA4 metrics for a URL
@@ -261,6 +261,112 @@ export const fetchGA4MetricsForUrl = async (accessToken, propertyId, pageUrl) =>
   }
 
   return fetchGA4Metrics(accessToken, propertyId, pagePath, startDateStr, endDate);
+};
+
+// Fetch reader insights (top cities and traffic sources) for a specific page
+export const fetchGA4ReaderInsights = async (accessToken, propertyId, pagePath, startDate, endDate) => {
+  const url = `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`;
+
+  // Fetch top cities
+  const citiesResponse = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: 'city' }],
+      metrics: [{ name: 'activeUsers' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'pagePath',
+          stringFilter: {
+            matchType: 'CONTAINS',
+            value: pagePath
+          }
+        }
+      },
+      orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+      limit: 5
+    }),
+  });
+
+  // Fetch traffic sources
+  const sourcesResponse = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+      metrics: [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'pagePath',
+          stringFilter: {
+            matchType: 'CONTAINS',
+            value: pagePath
+          }
+        }
+      },
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit: 5
+    }),
+  });
+
+  const result = {
+    topCities: [],
+    trafficSources: [],
+  };
+
+  // Parse cities response
+  if (citiesResponse.ok) {
+    const citiesData = await citiesResponse.json();
+    if (citiesData.rows) {
+      result.topCities = citiesData.rows.map(row => ({
+        city: row.dimensionValues[0]?.value || 'Unknown',
+        users: parseInt(row.metricValues[0]?.value) || 0,
+      })).filter(c => c.city !== '(not set)');
+    }
+  }
+
+  // Parse sources response
+  if (sourcesResponse.ok) {
+    const sourcesData = await sourcesResponse.json();
+    if (sourcesData.rows) {
+      result.trafficSources = sourcesData.rows.map(row => ({
+        source: row.dimensionValues[0]?.value || 'Unknown',
+        sessions: parseInt(row.metricValues[0]?.value) || 0,
+      }));
+    }
+  }
+
+  return result;
+};
+
+// Fetch reader insights for a URL
+export const fetchGA4ReaderInsightsForUrl = async (accessToken, propertyId, pageUrl) => {
+  const today = new Date();
+  const endDate = today.toISOString().split('T')[0];
+
+  // Last 28 days
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - 28);
+  const startDateStr = startDate.toISOString().split('T')[0];
+
+  // Extract path from URL
+  let pagePath = pageUrl;
+  try {
+    const urlObj = new URL(pageUrl);
+    pagePath = urlObj.pathname;
+  } catch (e) {
+    // If URL parsing fails, use as-is
+  }
+
+  return fetchGA4ReaderInsights(accessToken, propertyId, pagePath, startDateStr, endDate);
 };
 
 // Extract domain from URL for Search Console site matching

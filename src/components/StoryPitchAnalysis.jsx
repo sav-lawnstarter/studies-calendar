@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp, FileText, Download, MessageSquare, Award, ArrowUpDown } from 'lucide-react';
+import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp, FileText, Download, MessageSquare, Award, ArrowUpDown, MapPin, Share2 } from 'lucide-react';
 import {
   loadGoogleScript,
   getStoredToken,
@@ -10,6 +10,7 @@ import {
 import {
   fetchSearchConsoleWithComparison,
   fetchGA4MetricsForUrl,
+  fetchGA4ReaderInsightsForUrl,
   getPropertiesForBrand,
   getConfiguredBrands,
   formatEngagementTime,
@@ -192,6 +193,8 @@ export default function StoryPitchAnalysis() {
       if (ga4Property) {
         try {
           results.ga4 = await fetchGA4MetricsForUrl(token, ga4Property, story.study_url);
+          // Also fetch reader insights (top cities and traffic sources)
+          results.readerInsights = await fetchGA4ReaderInsightsForUrl(token, ga4Property, story.study_url);
         } catch (err) {
           console.error('GA4 fetch error:', err);
           results.ga4Error = err.message;
@@ -1178,36 +1181,78 @@ export default function StoryPitchAnalysis() {
                     </div>
                   </div>
                 ) : storyMetrics?.ga4 ? (
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <ArrowDownToLine size={14} className="text-ls-green" />
-                        <label className="text-xs font-medium text-gray-500">Entrances</label>
+                  <>
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Eye size={14} className="text-ls-green" />
+                          <label className="text-xs font-medium text-gray-500">Page Views</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.ga4.pageViews)}</p>
                       </div>
-                      <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.ga4.entrances)}</p>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Users size={14} className="text-ls-blue" />
-                        <label className="text-xs font-medium text-gray-500">Engaged Sessions</label>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Users size={14} className="text-ls-blue" />
+                          <label className="text-xs font-medium text-gray-500">Engaged Sessions</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.ga4.engagedSessions)}</p>
                       </div>
-                      <p className="text-lg font-semibold text-gray-900">{formatNumber(storyMetrics.ga4.engagedSessions)}</p>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Clock size={14} className="text-ls-orange" />
-                        <label className="text-xs font-medium text-gray-500">Avg. Engagement Time</label>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Clock size={14} className="text-ls-orange" />
+                          <label className="text-xs font-medium text-gray-500">Avg. Engagement Time</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{formatEngagementTime(storyMetrics.ga4.avgEngagementTime)}</p>
                       </div>
-                      <p className="text-lg font-semibold text-gray-900">{formatEngagementTime(storyMetrics.ga4.avgEngagementTime)}</p>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <ChevronDown size={14} className="text-purple-600" />
-                        <label className="text-xs font-medium text-gray-500">Scroll Depth</label>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <ChevronDown size={14} className="text-purple-600" />
+                          <label className="text-xs font-medium text-gray-500">Scroll Depth</label>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">{storyMetrics.ga4.scrollDepth.toFixed(1)}%</p>
                       </div>
-                      <p className="text-lg font-semibold text-gray-900">{storyMetrics.ga4.scrollDepth.toFixed(1)}%</p>
                     </div>
-                  </div>
+
+                    {/* Reader Insights - Top Cities and Traffic Sources */}
+                    {storyMetrics.readerInsights && (storyMetrics.readerInsights.topCities?.length > 0 || storyMetrics.readerInsights.trafficSources?.length > 0) && (
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        {/* Top Cities */}
+                        {storyMetrics.readerInsights.topCities?.length > 0 && (
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <MapPin size={14} className="text-red-500" />
+                              <label className="text-xs font-medium text-gray-500">Top Cities</label>
+                            </div>
+                            <div className="space-y-1">
+                              {storyMetrics.readerInsights.topCities.slice(0, 5).map((city, idx) => (
+                                <div key={idx} className="flex justify-between text-sm">
+                                  <span className="text-gray-700 truncate">{city.city}</span>
+                                  <span className="text-gray-500 font-medium ml-2">{formatNumber(city.users)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Traffic Sources */}
+                        {storyMetrics.readerInsights.trafficSources?.length > 0 && (
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Share2 size={14} className="text-blue-500" />
+                              <label className="text-xs font-medium text-gray-500">Traffic Sources</label>
+                            </div>
+                            <div className="space-y-1">
+                              {storyMetrics.readerInsights.trafficSources.slice(0, 5).map((source, idx) => (
+                                <div key={idx} className="flex justify-between text-sm">
+                                  <span className="text-gray-700 truncate">{source.source}</span>
+                                  <span className="text-gray-500 font-medium ml-2">{formatNumber(source.sessions)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <p className="text-sm text-gray-500 py-2">No Analytics data available for this URL.</p>
                 )}
