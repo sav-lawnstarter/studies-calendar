@@ -1,5 +1,27 @@
 // Google Search Console and Analytics API utility
 
+// Helper function to extract detailed error message from Google API error responses
+const extractApiErrorMessage = async (response, fallbackPrefix) => {
+  try {
+    const errorData = await response.json();
+    // Google APIs return error details in various formats
+    if (errorData.error?.message) {
+      return `${fallbackPrefix}: ${errorData.error.message}`;
+    }
+    if (errorData.error?.status) {
+      return `${fallbackPrefix}: ${errorData.error.status}`;
+    }
+    if (errorData.message) {
+      return `${fallbackPrefix}: ${errorData.message}`;
+    }
+    // Fallback to statusText if no message found in body
+    return `${fallbackPrefix}: ${response.statusText || response.status}`;
+  } catch {
+    // If JSON parsing fails, use statusText
+    return `${fallbackPrefix}: ${response.statusText || response.status}`;
+  }
+};
+
 // Brand-specific property configuration from environment variables
 export const BRAND_PROPERTIES = {
   'LawnStarter': {
@@ -89,7 +111,8 @@ export const fetchSearchConsoleMetrics = async (accessToken, siteUrl, pageUrl, s
     if (response.status === 403) {
       throw new Error('Access denied to Search Console. Ensure you have access to this property.');
     }
-    throw new Error(`Failed to fetch Search Console data: ${response.statusText}`);
+    const errorMessage = await extractApiErrorMessage(response, 'Failed to fetch Search Console data');
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
@@ -196,7 +219,8 @@ export const fetchGA4Metrics = async (accessToken, propertyId, pagePath, startDa
     if (response.status === 403) {
       throw new Error('Access denied to Google Analytics. Ensure you have access to this property.');
     }
-    throw new Error(`Failed to fetch Analytics data: ${response.statusText}`);
+    const errorMessage = await extractApiErrorMessage(response, 'Failed to fetch Analytics data');
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
@@ -398,7 +422,8 @@ export const fetchSearchConsoleSites = async (accessToken) => {
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch sites: ${response.statusText}`);
+    const errorMessage = await extractApiErrorMessage(response, 'Failed to fetch sites');
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
@@ -416,7 +441,8 @@ export const fetchGA4Properties = async (accessToken) => {
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch GA4 properties: ${response.statusText}`);
+    const errorMessage = await extractApiErrorMessage(response, 'Failed to fetch GA4 properties');
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
