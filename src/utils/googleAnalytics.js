@@ -427,7 +427,7 @@ export const getChangeArrow = (change) => {
 };
 
 // Batch fetch Search Console metrics for multiple URLs
-// Returns a map of URL -> { impressions, position, clicks, ctr }
+// Returns a map of URL -> { impressions, position, clicks, ctr, lastYearImpressions, impressionsChange }
 export const batchFetchSearchConsoleMetrics = async (accessToken, studies) => {
   const today = new Date();
   const endDate = today.toISOString().split('T')[0];
@@ -436,6 +436,15 @@ export const batchFetchSearchConsoleMetrics = async (accessToken, studies) => {
   const startDateCurrent = new Date(today);
   startDateCurrent.setDate(startDateCurrent.getDate() - 28);
   const startDateCurrentStr = startDateCurrent.toISOString().split('T')[0];
+
+  // Calculate last year's comparison period
+  const lastYearEnd = new Date(today);
+  lastYearEnd.setFullYear(lastYearEnd.getFullYear() - 1);
+  const lastYearEndStr = lastYearEnd.toISOString().split('T')[0];
+
+  const lastYearStart = new Date(startDateCurrent);
+  lastYearStart.setFullYear(lastYearStart.getFullYear() - 1);
+  const lastYearStartStr = lastYearStart.toISOString().split('T')[0];
 
   const results = {};
 
@@ -457,56 +466,90 @@ export const batchFetchSearchConsoleMetrics = async (accessToken, studies) => {
       const formattedSiteUrl = encodeURIComponent(siteUrl);
       const url = `https://www.googleapis.com/webmasters/v3/sites/${formattedSiteUrl}/searchAnalytics/query`;
 
-      // Get all pages for this property (with pagination if needed)
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          startDate: startDateCurrentStr,
-          endDate,
-          dimensions: ['page'],
-          rowLimit: 5000,  // Get up to 5000 pages
+      // Fetch current and last year data in parallel
+      const [currentResponse, lastYearResponse] = await Promise.all([
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            startDate: startDateCurrentStr,
+            endDate,
+            dimensions: ['page'],
+            rowLimit: 5000,
+          }),
         }),
-      });
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            startDate: lastYearStartStr,
+            endDate: lastYearEndStr,
+            dimensions: ['page'],
+            rowLimit: 5000,
+          }),
+        }),
+      ]);
 
-      if (!response.ok) {
-        console.warn(`Failed to fetch GSC data for ${siteUrl}:`, response.statusText);
+      if (!currentResponse.ok) {
+        console.warn(`Failed to fetch GSC data for ${siteUrl}:`, currentResponse.statusText);
         continue;
       }
 
-      const data = await response.json();
+      const currentData = await currentResponse.json();
+      const lastYearData = lastYearResponse.ok ? await lastYearResponse.json() : { rows: [] };
 
-      if (data.rows) {
-        // Build a map of normalized URLs to metrics
-        const urlMetrics = {};
-        for (const row of data.rows) {
-          const pageUrl = row.keys[0].toLowerCase();
-          urlMetrics[pageUrl] = {
-            clicks: row.clicks || 0,
-            impressions: row.impressions || 0,
-            ctr: row.ctr || 0,
-            position: row.position || 0,
-          };
-        }
-
-        // Match study URLs to the fetched metrics
-        for (const study of propertyStudies) {
-          const normalizedUrl = study.url.toLowerCase();
-          // Try exact match first
-          if (urlMetrics[normalizedUrl]) {
-            results[study.url] = urlMetrics[normalizedUrl];
-          } else {
-            // Try partial match (URL might have trailing slashes or query params)
-            for (const [pageUrl, metrics] of Object.entries(urlMetrics)) {
-              if (pageUrl.includes(normalizedUrl) || normalizedUrl.includes(pageUrl)) {
-                results[study.url] = metrics;
-                break;
-              }
-            }
+      // Build maps of normalized URLs to metrics
+      const buildUrlMetrics = (data) => {
+        const map = {};
+        if (data.rows) {
+          for (const row of data.rows) {
+            const pageUrl = row.keys[0].toLowerCase();
+            map[pageUrl] = {
+              clicks: row.clicks || 0,
+              impressions: row.impressions || 0,
+              ctr: row.ctr || 0,
+              position: row.position || 0,
+            };
           }
+        }
+        return map;
+      };
+
+      const currentMetrics = buildUrlMetrics(currentData);
+      const lastYearMetrics = buildUrlMetrics(lastYearData);
+
+      // Helper to find metrics for a study URL in a metrics map
+      const findMetrics = (studyUrl, metricsMap) => {
+        const normalizedUrl = studyUrl.toLowerCase();
+        if (metricsMap[normalizedUrl]) return metricsMap[normalizedUrl];
+        for (const [pageUrl, metrics] of Object.entries(metricsMap)) {
+          if (pageUrl.includes(normalizedUrl) || normalizedUrl.includes(pageUrl)) {
+            return metrics;
+          }
+        }
+        return null;
+      };
+
+      // Match study URLs to the fetched metrics
+      for (const study of propertyStudies) {
+        const current = findMetrics(study.url, currentMetrics);
+        if (current) {
+          const lastYear = findMetrics(study.url, lastYearMetrics);
+          let impressionsChange = null;
+          if (lastYear && lastYear.impressions > 0) {
+            impressionsChange = (((current.impressions - lastYear.impressions) / lastYear.impressions) * 100).toFixed(1);
+          }
+          results[study.url] = {
+            ...current,
+            lastYearImpressions: lastYear?.impressions || 0,
+            impressionsChange,
+          };
         }
       }
     } catch (error) {

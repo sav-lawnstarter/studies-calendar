@@ -710,6 +710,20 @@ export const matchStudiesWithSheetData = (scrapedStudies, sheetData) => {
         // Other metadata
         datePitched: sheetRow.date_pitched || sheetRow.pitch_date || null,
         notes: sheetRow.notes || null,
+        // Links by year
+        links2025: sheetRow['2025_link_'] || null,
+        links2024: sheetRow['2024_link_'] || null,
+        links2023: sheetRow['2023_link_'] || null,
+        links2022: sheetRow['2022_link_'] || null,
+        links2021: sheetRow['2021_link_'] || null,
+        // National email metrics
+        nationalOpenRate: sheetRow.national_o_r || null,
+        nationalClickRate: sheetRow.national_c_r || null,
+        nationalSends: sheetRow.national_sends || null,
+        // Local email metrics
+        localAvgOpenRate: sheetRow.average_o_r_local || null,
+        localAvgClickRate: sheetRow.average_c_r_local || null,
+        localSends: sheetRow.local_sends || null,
       };
     }
 

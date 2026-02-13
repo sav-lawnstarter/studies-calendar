@@ -14,6 +14,7 @@ import {
   List,
   X,
   TrendingUp,
+  TrendingDown,
   Mail,
   Users,
   Clock,
@@ -23,8 +24,12 @@ import {
   Activity,
   Timer,
   ArrowDown,
+  ArrowUp,
   MapPin,
   Share2,
+  MessageSquare,
+  Send,
+  Target,
 } from 'lucide-react';
 import {
   getCachedArchive,
@@ -56,6 +61,16 @@ import {
 } from '../utils/googleAnalytics';
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+// Local storage key for archive comments
+const ARCHIVE_COMMENTS_STORAGE_KEY = 'story-archive-comments';
+
+// Helper to parse numbers that may contain commas (e.g., "1,174" -> 1174)
+const parseNumberWithCommas = (value) => {
+  if (!value) return 0;
+  const cleaned = String(value).replace(/,/g, '');
+  return parseFloat(cleaned) || 0;
+};
 
 export default function StoryArchive() {
   // Archive data state
@@ -89,6 +104,19 @@ export default function StoryArchive() {
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [selectedStudy, setSelectedStudy] = useState(null);
+  const [pitchedFilter, setPitchedFilter] = useState('All'); // 'All', 'Pitched', 'Not Pitched'
+  const [metricsFilter, setMetricsFilter] = useState('All'); // 'All', 'Has Metrics', 'No Metrics'
+  const [activeDetailTab, setActiveDetailTab] = useState('overview');
+
+  // Comments state (saved to localStorage)
+  const [archiveComments, setArchiveComments] = useState(() => {
+    try {
+      const stored = localStorage.getItem(ARCHIVE_COMMENTS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // Google Search Console data for modal
   const [gscData, setGscData] = useState(null);
@@ -104,6 +132,18 @@ export default function StoryArchive() {
   const [ga4Insights, setGa4Insights] = useState(null);
   const [isLoadingGa4, setIsLoadingGa4] = useState(false);
   const [ga4Error, setGa4Error] = useState(null);
+
+  // Save comments to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem(ARCHIVE_COMMENTS_STORAGE_KEY, JSON.stringify(archiveComments));
+  }, [archiveComments]);
+
+  const updateArchiveComment = useCallback((studyId, comment) => {
+    setArchiveComments(prev => ({
+      ...prev,
+      [studyId]: comment,
+    }));
+  }, []);
 
   // Get available years for filter
   const availableYears = useMemo(() => {
@@ -365,6 +405,20 @@ export default function StoryArchive() {
       result = result.filter((study) => !study.inContentCalendar);
     }
 
+    // Pitched filter
+    if (pitchedFilter === 'Pitched') {
+      result = result.filter((study) => study.datePitched);
+    } else if (pitchedFilter === 'Not Pitched') {
+      result = result.filter((study) => !study.datePitched);
+    }
+
+    // Metrics filter
+    if (metricsFilter === 'Has Metrics') {
+      result = result.filter((study) => study.hasSheetData);
+    } else if (metricsFilter === 'No Metrics') {
+      result = result.filter((study) => !study.hasSheetData);
+    }
+
     // Sort
     switch (sortBy) {
       case 'newest':
@@ -385,9 +439,23 @@ export default function StoryArchive() {
         break;
       case 'links':
         result.sort((a, b) => {
-          const aLinks = parseInt(a.studyLinkNumber) || 0;
-          const bLinks = parseInt(b.studyLinkNumber) || 0;
+          const aLinks = parseNumberWithCommas(a.studyLinkNumber);
+          const bLinks = parseNumberWithCommas(b.studyLinkNumber);
           return bLinks - aLinks;
+        });
+        break;
+      case 'impressions':
+        result.sort((a, b) => {
+          const aImpr = gscSummaryData[a.url]?.impressions || 0;
+          const bImpr = gscSummaryData[b.url]?.impressions || 0;
+          return bImpr - aImpr;
+        });
+        break;
+      case 'position':
+        result.sort((a, b) => {
+          const aPos = gscSummaryData[a.url]?.position || 999;
+          const bPos = gscSummaryData[b.url]?.position || 999;
+          return aPos - bPos;
         });
         break;
       case 'performance':
@@ -402,7 +470,7 @@ export default function StoryArchive() {
     }
 
     return result;
-  }, [matchedStudies, searchQuery, brandFilter, yearFilter, calendarFilter, sortBy]);
+  }, [matchedStudies, searchQuery, brandFilter, yearFilter, calendarFilter, pitchedFilter, metricsFilter, sortBy, gscSummaryData]);
 
   // Handle brand status updates
   const handleBrandStatus = (brand, status, errorMsg = null) => {
@@ -550,6 +618,12 @@ export default function StoryArchive() {
                 In Calendar
               </span>
             )}
+            {study.datePitched && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 flex items-center gap-1">
+                <Send size={10} />
+                Pitched
+              </span>
+            )}
             {study.hasSheetData && (
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
                 Has Metrics
@@ -584,6 +658,12 @@ export default function StoryArchive() {
                 <p className="text-sm font-semibold text-blue-700">
                   {formatNumber(gscMetrics.impressions)}
                 </p>
+                {gscMetrics.impressionsChange !== null && gscMetrics.impressionsChange !== undefined && (
+                  <p className={`text-xs mt-0.5 flex items-center justify-center gap-0.5 ${parseFloat(gscMetrics.impressionsChange) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {parseFloat(gscMetrics.impressionsChange) >= 0 ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+                    {Math.abs(parseFloat(gscMetrics.impressionsChange))}% YoY
+                  </p>
+                )}
               </div>
               <div className="bg-orange-50 rounded-lg p-2 text-center">
                 <div className="flex items-center justify-center gap-1 text-orange-600 mb-1">
@@ -624,7 +704,7 @@ export default function StoryArchive() {
           {/* Actions */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setSelectedStudy(study)}
+              onClick={() => { setSelectedStudy(study); setActiveDetailTab('overview'); }}
               className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
             >
               <Eye size={14} />
@@ -707,6 +787,11 @@ export default function StoryArchive() {
         {gscMetrics?.impressions ? (
           <span className="text-sm font-medium text-blue-700">
             {formatNumber(gscMetrics.impressions)}
+            {gscMetrics.impressionsChange !== null && gscMetrics.impressionsChange !== undefined && (
+              <span className={`ml-1 text-xs ${parseFloat(gscMetrics.impressionsChange) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {parseFloat(gscMetrics.impressionsChange) >= 0 ? '\u2191' : '\u2193'}{Math.abs(parseFloat(gscMetrics.impressionsChange))}%
+              </span>
+            )}
           </span>
         ) : (
           <span className="text-sm text-gray-400">—</span>
@@ -724,7 +809,7 @@ export default function StoryArchive() {
       <td className="px-4 py-3">
         <div className="flex items-center justify-center gap-1">
           <button
-            onClick={() => setSelectedStudy(study)}
+            onClick={() => { setSelectedStudy(study); setActiveDetailTab('overview'); }}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             title="View Details"
           >
@@ -745,7 +830,7 @@ export default function StoryArchive() {
     );
   };
 
-  // Study detail modal
+  // Study detail modal with tabs
   const StudyDetailModal = () => {
     if (!selectedStudy) return null;
 
@@ -757,7 +842,28 @@ export default function StoryArchive() {
           s.id !== selectedStudy.id &&
           s.url !== selectedStudy.url
       )
-      .slice(0, 3);
+      .slice(0, 5);
+
+    // Parse links by year
+    const linksByYear = [
+      { year: '2025', count: parseNumberWithCommas(selectedStudy.links2025) },
+      { year: '2024', count: parseNumberWithCommas(selectedStudy.links2024) },
+      { year: '2023', count: parseNumberWithCommas(selectedStudy.links2023) },
+      { year: '2022', count: parseNumberWithCommas(selectedStudy.links2022) },
+      { year: '2021', count: parseNumberWithCommas(selectedStudy.links2021) },
+    ];
+    const totalLinksFromYears = parseNumberWithCommas(selectedStudy.studyLinkNumber);
+    const maxYearLinks = Math.max(...linksByYear.map(l => l.count), 1);
+
+    const tabs = [
+      { id: 'overview', label: 'Overview', icon: BarChart2 },
+      { id: 'pitch', label: 'Pitch & Outreach', icon: Send },
+      { id: 'links', label: 'Links', icon: Link2 },
+      { id: 'related', label: 'Related & Notes', icon: MessageSquare },
+    ];
+
+    // Generate a stable ID for comments keyed on study URL
+    const commentKey = selectedStudy.url || selectedStudy.id;
 
     return (
       <div
@@ -765,11 +871,11 @@ export default function StoryArchive() {
         onClick={() => setSelectedStudy(null)}
       >
         <div
-          className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
+          className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="bg-ls-green p-6 text-white">
+          <div className="bg-ls-green p-6 text-white flex-shrink-0">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -779,6 +885,12 @@ export default function StoryArchive() {
                       In Calendar
                     </span>
                   )}
+                  {selectedStudy.datePitched && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-white/20 text-white flex items-center gap-1">
+                      <Send size={10} />
+                      Pitched {formatDate(selectedStudy.datePitched)}
+                    </span>
+                  )}
                   {selectedStudy.hasSheetData && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-white/20 text-white">
                       Has Metrics
@@ -786,9 +898,20 @@ export default function StoryArchive() {
                   )}
                 </div>
                 <h2 className="text-xl font-bold">{selectedStudy.title}</h2>
-                <p className="text-white/80 text-sm mt-1">
-                  Published: {formatDate(selectedStudy.publishDate)}
-                </p>
+                <div className="flex items-center gap-4 mt-1">
+                  <p className="text-white/80 text-sm">
+                    Published: {formatDate(selectedStudy.publishDate)}
+                  </p>
+                  <a
+                    href={selectedStudy.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-white/80 hover:text-white text-sm flex items-center gap-1 transition-colors"
+                  >
+                    <ExternalLink size={12} />
+                    View Study
+                  </a>
+                </div>
               </div>
               <button
                 onClick={() => setSelectedStudy(null)}
@@ -799,449 +922,574 @@ export default function StoryArchive() {
             </div>
           </div>
 
-          {/* Content */}
-          <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-            {/* Study URL */}
-            <div className="mb-6">
-              <a
-                href={selectedStudy.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-ls-green hover:text-ls-green-light transition-colors"
-              >
-                <ExternalLink size={16} />
-                <span className="underline break-all">{selectedStudy.url}</span>
-              </a>
-            </div>
-
-            {/* Excerpt if available */}
-            {selectedStudy.excerpt && (
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">
-                  Excerpt
-                </h3>
-                <p className="text-gray-700">{selectedStudy.excerpt}</p>
-              </div>
-            )}
-
-            {/* Content Calendar Status */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
-                Content Calendar
-              </h3>
-              {selectedStudy.inContentCalendar ? (
-                <div className="bg-ls-green-lighter rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Calendar size={18} className="text-ls-green" />
-                    <span className="font-medium text-ls-green">This study is in the Content Calendar</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    {selectedStudy.calendarEntry?.storyTitle && (
-                      <div>
-                        <span className="text-gray-500">Story Title:</span>
-                        <p className="font-medium text-gray-900">{selectedStudy.calendarEntry.storyTitle}</p>
-                      </div>
-                    )}
-                    {selectedStudy.calendarEntry?.pitchDate && (
-                      <div>
-                        <span className="text-gray-500">Pitch Date:</span>
-                        <p className="font-medium text-gray-900">{formatDate(selectedStudy.calendarEntry.pitchDate)}</p>
-                      </div>
-                    )}
-                    {selectedStudy.calendarEntry?.status && (
-                      <div>
-                        <span className="text-gray-500">Status:</span>
-                        <p className="font-medium text-gray-900">{selectedStudy.calendarEntry.status}</p>
-                      </div>
-                    )}
-                    {selectedStudy.calendarEntry?.productionDate && (
-                      <div>
-                        <span className="text-gray-500">Production Date:</span>
-                        <p className="font-medium text-gray-900">{formatDate(selectedStudy.calendarEntry.productionDate)}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 rounded-lg p-4 text-center">
-                  <p className="text-gray-500 mb-3">
-                    This study is not yet in the Content Calendar.
-                  </p>
-                  <a
-                    href="https://docs.google.com/spreadsheets/d/1ELXVk6Zu9U3ISiv7zQM0rf9GCi_v2OrRzNat9cKGw7M/edit"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors"
-                  >
-                    <ExternalLink size={16} />
-                    Add to Content Calendar
-                  </a>
-                </div>
-              )}
-            </div>
-
-            {/* Search Performance (Google Search Console) */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
-                Search Performance
-                <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
-              </h3>
-              {isLoadingGsc ? (
-                <div className="bg-gray-50 rounded-lg p-6 text-center">
-                  <Loader2 size={24} className="animate-spin text-ls-green mx-auto mb-2" />
-                  <p className="text-gray-500 text-sm">Loading Search Console data...</p>
-                </div>
-              ) : gscError ? (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-gray-500 text-center text-sm">
-                    {gscError}
-                  </p>
+          {/* Tab Navigation */}
+          <div className="border-b bg-white flex-shrink-0">
+            <div className="flex">
+              {tabs.map(tab => {
+                const TabIcon = tab.icon;
+                return (
                   <button
-                    onClick={() => fetchGscData(selectedStudy)}
-                    className="mt-2 mx-auto block text-ls-green hover:text-ls-green-light text-sm font-medium"
+                    key={tab.id}
+                    onClick={() => setActiveDetailTab(tab.id)}
+                    className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                      activeDetailTab === tab.id
+                        ? 'border-ls-green text-ls-green'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                   >
-                    Try again
+                    <TabIcon size={16} />
+                    {tab.label}
                   </button>
-                </div>
-              ) : gscData ? (
-                <div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {/* Clicks */}
-                    <div className="bg-ls-green-lighter rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-ls-green mb-1">
-                        <MousePointerClick size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-ls-green">
-                        {formatNumber(gscData.current.clicks)}
-                      </p>
-                      <p className="text-xs text-gray-600">Clicks</p>
-                      {gscData.comparison.clicksChange !== null && (
-                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.clicksChange)}`}>
-                          {getChangeArrow(gscData.comparison.clicksChange)}{gscData.comparison.clicksChange}% YoY
-                        </p>
-                      )}
-                    </div>
-                    {/* Impressions */}
-                    <div className="bg-blue-50 rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
-                        <Eye size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {formatNumber(gscData.current.impressions)}
-                      </p>
-                      <p className="text-xs text-gray-600">Impressions</p>
-                      {gscData.comparison.impressionsChange !== null && (
-                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.impressionsChange)}`}>
-                          {getChangeArrow(gscData.comparison.impressionsChange)}{gscData.comparison.impressionsChange}% YoY
-                        </p>
-                      )}
-                    </div>
-                    {/* CTR */}
-                    <div className="bg-purple-50 rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-purple-600 mb-1">
-                        <TrendingUp size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-purple-600">
-                        {formatPercent(gscData.current.ctr)}
-                      </p>
-                      <p className="text-xs text-gray-600">CTR</p>
-                      {gscData.comparison.ctrChange !== null && (
-                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.ctrChange)}`}>
-                          {getChangeArrow(gscData.comparison.ctrChange)}{gscData.comparison.ctrChange}% YoY
-                        </p>
-                      )}
-                    </div>
-                    {/* Average Position */}
-                    <div className="bg-orange-50 rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-orange-600 mb-1">
-                        <Globe size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-orange-600">
-                        {formatPosition(gscData.current.position)}
-                      </p>
-                      <p className="text-xs text-gray-600">Avg Position</p>
-                      {gscData.comparison.positionChange !== null && (
-                        <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.positionChange, true)}`}>
-                          {parseFloat(gscData.comparison.positionChange) > 0 ? '+' : ''}{gscData.comparison.positionChange} pos YoY
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {/* Last year comparison row */}
-                  <div className="mt-3 grid grid-cols-4 gap-3 text-xs text-gray-500 px-1">
-                    <div className="text-center">Last yr: {formatNumber(gscData.lastYear.clicks)}</div>
-                    <div className="text-center">Last yr: {formatNumber(gscData.lastYear.impressions)}</div>
-                    <div className="text-center">Last yr: {formatPercent(gscData.lastYear.ctr)}</div>
-                    <div className="text-center">Last yr: {formatPosition(gscData.lastYear.position)}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-gray-500 text-center text-sm">
-                    No Search Console data available.
-                  </p>
-                </div>
-              )}
+                );
+              })}
             </div>
+          </div>
 
-            {/* Site Analytics (Google Analytics 4) */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
-                Site Analytics
-                <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
-              </h3>
-              {isLoadingGa4 ? (
-                <div className="bg-gray-50 rounded-lg p-6 text-center">
-                  <Loader2 size={24} className="animate-spin text-ls-green mx-auto mb-2" />
-                  <p className="text-gray-500 text-sm">Loading Analytics data...</p>
-                </div>
-              ) : ga4Error ? (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-gray-500 text-center text-sm">
-                    {ga4Error}
-                  </p>
-                  <button
-                    onClick={() => fetchGa4Data(selectedStudy)}
-                    className="mt-2 mx-auto block text-ls-green hover:text-ls-green-light text-sm font-medium"
-                  >
-                    Try again
-                  </button>
-                </div>
-              ) : ga4Data ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {/* Page Views */}
-                  <div className="bg-indigo-50 rounded-lg p-4 text-center">
-                    <div className="flex items-center justify-center gap-1 text-indigo-600 mb-1">
-                      <Eye size={16} />
-                    </div>
-                    <p className="text-2xl font-bold text-indigo-600">
-                      {formatNumber(ga4Data.pageViews)}
-                    </p>
-                    <p className="text-xs text-gray-600">Page Views</p>
-                  </div>
-                  {/* Engaged Sessions */}
-                  <div className="bg-teal-50 rounded-lg p-4 text-center">
-                    <div className="flex items-center justify-center gap-1 text-teal-600 mb-1">
-                      <Activity size={16} />
-                    </div>
-                    <p className="text-2xl font-bold text-teal-600">
-                      {formatNumber(ga4Data.engagedSessions)}
-                    </p>
-                    <p className="text-xs text-gray-600">Engaged Sessions</p>
-                  </div>
-                  {/* Avg Engagement Time */}
-                  <div className="bg-amber-50 rounded-lg p-4 text-center">
-                    <div className="flex items-center justify-center gap-1 text-amber-600 mb-1">
-                      <Timer size={16} />
-                    </div>
-                    <p className="text-2xl font-bold text-amber-600">
-                      {formatEngagementTime(ga4Data.avgEngagementTime)}
-                    </p>
-                    <p className="text-xs text-gray-600">Avg Time on Page</p>
-                  </div>
-                  {/* Scroll Depth */}
-                  <div className="bg-rose-50 rounded-lg p-4 text-center">
-                    <div className="flex items-center justify-center gap-1 text-rose-600 mb-1">
-                      <ArrowDown size={16} />
-                    </div>
-                    <p className="text-2xl font-bold text-rose-600">
-                      {ga4Data.scrollDepth > 0 ? `${ga4Data.scrollDepth.toFixed(0)}%` : '-'}
-                    </p>
-                    <p className="text-xs text-gray-600">Scroll Depth</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-gray-500 text-center text-sm">
-                    No Analytics data available.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Reader Insights */}
-            {ga4Insights && (ga4Insights.topCities?.length > 0 || ga4Insights.trafficSources?.length > 0) && (
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
-                  Reader Insights
-                  <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Top Cities */}
-                  {ga4Insights.topCities?.length > 0 && (
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <MapPin size={16} className="text-gray-600" />
-                        <span className="text-sm font-medium text-gray-700">Top Cities</span>
-                      </div>
-                      <div className="space-y-2">
-                        {ga4Insights.topCities.map((city, index) => (
-                          <div key={index} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-600">{city.city}</span>
-                            <span className="font-medium text-gray-900">{formatNumber(city.users)} users</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {/* Traffic Sources */}
-                  {ga4Insights.trafficSources?.length > 0 && (
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Share2 size={16} className="text-gray-600" />
-                        <span className="text-sm font-medium text-gray-700">Traffic Sources</span>
-                      </div>
-                      <div className="space-y-2">
-                        {ga4Insights.trafficSources.map((source, index) => (
-                          <div key={index} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-600">{source.source}</span>
-                            <span className="font-medium text-gray-900">{formatNumber(source.sessions)} sessions</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Performance Data */}
-            {selectedStudy.hasSheetData ? (
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
-                  Performance Data
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {selectedStudy.studyLinkNumber && (
-                    <div className="bg-ls-green-lighter rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-ls-green mb-1">
-                        <Link2 size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-ls-green">
-                        {selectedStudy.studyLinkNumber}
-                      </p>
-                      <p className="text-xs text-gray-600">Links</p>
-                    </div>
-                  )}
-                  {selectedStudy.avgOpenRate && (
-                    <div className="bg-blue-50 rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
-                        <BarChart2 size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {selectedStudy.avgOpenRate}%
-                      </p>
-                      <p className="text-xs text-gray-600">Avg O/R</p>
-                    </div>
-                  )}
-                  {selectedStudy.avgClickRate && (
-                    <div className="bg-purple-50 rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-purple-600 mb-1">
-                        <TrendingUp size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-purple-600">
-                        {selectedStudy.avgClickRate}%
-                      </p>
-                      <p className="text-xs text-gray-600">Avg C/R</p>
-                    </div>
-                  )}
-                  {selectedStudy.prevLinkNumber && (
-                    <div className="bg-orange-50 rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-1 text-orange-600 mb-1">
-                        <Clock size={16} />
-                      </div>
-                      <p className="text-2xl font-bold text-orange-600">
-                        {selectedStudy.prevLinkNumber}
-                      </p>
-                      <p className="text-xs text-gray-600">Prev. Links</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Additional metrics */}
-                {(selectedStudy.expertsContacted ||
-                  selectedStudy.expertResponses ||
-                  selectedStudy.doFollowLinks ||
-                  selectedStudy.noFollowLinks) && (
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    {selectedStudy.expertsContacted && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Users size={14} />
-                        <span>Experts Contacted: {selectedStudy.expertsContacted}</span>
-                      </div>
-                    )}
-                    {selectedStudy.expertResponses && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Mail size={14} />
-                        <span>Expert Responses: {selectedStudy.expertResponses}</span>
-                      </div>
-                    )}
-                    {selectedStudy.doFollowLinks && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Link2 size={14} />
-                        <span>DoFollow: {selectedStudy.doFollowLinks}</span>
-                      </div>
-                    )}
-                    {selectedStudy.noFollowLinks && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Link2 size={14} />
-                        <span>NoFollow: {selectedStudy.noFollowLinks}</span>
-                      </div>
-                    )}
+          {/* Tab Content */}
+          <div className="p-6 overflow-y-auto flex-1">
+            {/* ===== OVERVIEW TAB ===== */}
+            {activeDetailTab === 'overview' && (
+              <div className="space-y-6">
+                {/* Excerpt if available */}
+                {selectedStudy.excerpt && (
+                  <div>
+                    <p className="text-gray-700 text-sm">{selectedStudy.excerpt}</p>
                   </div>
                 )}
 
-                {/* Notes */}
+                {/* Search Performance (Google Search Console) */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                    Search Performance
+                    <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
+                  </h3>
+                  {isLoadingGsc ? (
+                    <div className="bg-gray-50 rounded-lg p-6 text-center">
+                      <Loader2 size={24} className="animate-spin text-ls-green mx-auto mb-2" />
+                      <p className="text-gray-500 text-sm">Loading Search Console data...</p>
+                    </div>
+                  ) : gscError ? (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-500 text-center text-sm">{gscError}</p>
+                      <button
+                        onClick={() => fetchGscData(selectedStudy)}
+                        className="mt-2 mx-auto block text-ls-green hover:text-ls-green-light text-sm font-medium"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  ) : gscData ? (
+                    <div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="bg-ls-green-lighter rounded-lg p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-ls-green mb-1">
+                            <MousePointerClick size={16} />
+                          </div>
+                          <p className="text-2xl font-bold text-ls-green">
+                            {formatNumber(gscData.current.clicks)}
+                          </p>
+                          <p className="text-xs text-gray-600">Clicks</p>
+                          {gscData.comparison.clicksChange !== null && (
+                            <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.clicksChange)}`}>
+                              {getChangeArrow(gscData.comparison.clicksChange)}{gscData.comparison.clicksChange}% YoY
+                            </p>
+                          )}
+                        </div>
+                        <div className="bg-blue-50 rounded-lg p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
+                            <Eye size={16} />
+                          </div>
+                          <p className="text-2xl font-bold text-blue-600">
+                            {formatNumber(gscData.current.impressions)}
+                          </p>
+                          <p className="text-xs text-gray-600">Impressions</p>
+                          {gscData.comparison.impressionsChange !== null && (
+                            <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.impressionsChange)}`}>
+                              {getChangeArrow(gscData.comparison.impressionsChange)}{gscData.comparison.impressionsChange}% YoY
+                            </p>
+                          )}
+                        </div>
+                        <div className="bg-purple-50 rounded-lg p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-purple-600 mb-1">
+                            <TrendingUp size={16} />
+                          </div>
+                          <p className="text-2xl font-bold text-purple-600">
+                            {formatPercent(gscData.current.ctr)}
+                          </p>
+                          <p className="text-xs text-gray-600">CTR</p>
+                          {gscData.comparison.ctrChange !== null && (
+                            <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.ctrChange)}`}>
+                              {getChangeArrow(gscData.comparison.ctrChange)}{gscData.comparison.ctrChange}% YoY
+                            </p>
+                          )}
+                        </div>
+                        <div className="bg-orange-50 rounded-lg p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-orange-600 mb-1">
+                            <Globe size={16} />
+                          </div>
+                          <p className="text-2xl font-bold text-orange-600">
+                            {formatPosition(gscData.current.position)}
+                          </p>
+                          <p className="text-xs text-gray-600">Avg Position</p>
+                          {gscData.comparison.positionChange !== null && (
+                            <p className={`text-xs mt-1 ${getChangeClass(gscData.comparison.positionChange, true)}`}>
+                              {parseFloat(gscData.comparison.positionChange) > 0 ? '+' : ''}{gscData.comparison.positionChange} pos YoY
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-4 gap-3 text-xs text-gray-500 px-1">
+                        <div className="text-center">Last yr: {formatNumber(gscData.lastYear.clicks)}</div>
+                        <div className="text-center">Last yr: {formatNumber(gscData.lastYear.impressions)}</div>
+                        <div className="text-center">Last yr: {formatPercent(gscData.lastYear.ctr)}</div>
+                        <div className="text-center">Last yr: {formatPosition(gscData.lastYear.position)}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-500 text-center text-sm">No Search Console data available.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Site Analytics (Google Analytics 4) */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                    Site Analytics
+                    <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
+                  </h3>
+                  {isLoadingGa4 ? (
+                    <div className="bg-gray-50 rounded-lg p-6 text-center">
+                      <Loader2 size={24} className="animate-spin text-ls-green mx-auto mb-2" />
+                      <p className="text-gray-500 text-sm">Loading Analytics data...</p>
+                    </div>
+                  ) : ga4Error ? (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-500 text-center text-sm">{ga4Error}</p>
+                      <button
+                        onClick={() => fetchGa4Data(selectedStudy)}
+                        className="mt-2 mx-auto block text-ls-green hover:text-ls-green-light text-sm font-medium"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  ) : ga4Data ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="bg-indigo-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-indigo-600 mb-1">
+                          <Eye size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-indigo-600">{formatNumber(ga4Data.pageViews)}</p>
+                        <p className="text-xs text-gray-600">Page Views</p>
+                      </div>
+                      <div className="bg-teal-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-teal-600 mb-1">
+                          <Activity size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-teal-600">{formatNumber(ga4Data.engagedSessions)}</p>
+                        <p className="text-xs text-gray-600">Engaged Sessions</p>
+                      </div>
+                      <div className="bg-amber-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-amber-600 mb-1">
+                          <Timer size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-amber-600">{formatEngagementTime(ga4Data.avgEngagementTime)}</p>
+                        <p className="text-xs text-gray-600">Avg Time on Page</p>
+                      </div>
+                      <div className="bg-rose-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-rose-600 mb-1">
+                          <ArrowDown size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-rose-600">
+                          {ga4Data.scrollDepth > 0 ? `${ga4Data.scrollDepth.toFixed(0)}%` : '-'}
+                        </p>
+                        <p className="text-xs text-gray-600">Scroll Depth</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-500 text-center text-sm">No Analytics data available.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Reader Insights */}
+                {ga4Insights && (ga4Insights.topCities?.length > 0 || ga4Insights.trafficSources?.length > 0) && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                      Reader Insights
+                      <span className="text-xs font-normal text-gray-400 ml-2">(Last 28 days)</span>
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {ga4Insights.topCities?.length > 0 && (
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <MapPin size={16} className="text-gray-600" />
+                            <span className="text-sm font-medium text-gray-700">Top Cities</span>
+                          </div>
+                          <div className="space-y-2">
+                            {ga4Insights.topCities.map((city, index) => (
+                              <div key={index} className="flex items-center justify-between text-sm">
+                                <span className="text-gray-600">{city.city}</span>
+                                <span className="font-medium text-gray-900">{formatNumber(city.users)} users</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {ga4Insights.trafficSources?.length > 0 && (
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Share2 size={16} className="text-gray-600" />
+                            <span className="text-sm font-medium text-gray-700">Traffic Sources</span>
+                          </div>
+                          <div className="space-y-2">
+                            {ga4Insights.trafficSources.map((source, index) => (
+                              <div key={index} className="flex items-center justify-between text-sm">
+                                <span className="text-gray-600">{source.source}</span>
+                                <span className="font-medium text-gray-900">{formatNumber(source.sessions)} sessions</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===== PITCH & OUTREACH TAB ===== */}
+            {activeDetailTab === 'pitch' && (
+              <div className="space-y-6">
+                {/* Pitch Date */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Pitch Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar size={16} className="text-indigo-600" />
+                        <span className="text-sm font-medium text-gray-700">Date Pitched</span>
+                      </div>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedStudy.datePitched ? formatDate(selectedStudy.datePitched) : 'Not pitched'}
+                      </p>
+                    </div>
+                    {selectedStudy.inContentCalendar && selectedStudy.calendarEntry?.status && (
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Target size={16} className="text-ls-green" />
+                          <span className="text-sm font-medium text-gray-700">Status</span>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">
+                          {selectedStudy.calendarEntry.status}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* National Email Metrics */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                    National Email Metrics
+                  </h3>
+                  {selectedStudy.nationalOpenRate || selectedStudy.nationalClickRate || selectedStudy.nationalSends ? (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-blue-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
+                          <Mail size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-blue-600">
+                          {selectedStudy.nationalOpenRate || '-'}
+                        </p>
+                        <p className="text-xs text-gray-600">Open Rate</p>
+                      </div>
+                      <div className="bg-purple-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-purple-600 mb-1">
+                          <MousePointerClick size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-purple-600">
+                          {selectedStudy.nationalClickRate || '-'}
+                        </p>
+                        <p className="text-xs text-gray-600">Click Rate</p>
+                      </div>
+                      <div className="bg-indigo-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-indigo-600 mb-1">
+                          <Send size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-indigo-600">
+                          {selectedStudy.nationalSends || '-'}
+                        </p>
+                        <p className="text-xs text-gray-600">Total Sends</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-500 text-center text-sm">No national email metrics available.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Local Email Metrics */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                    Local Email Metrics
+                  </h3>
+                  {selectedStudy.localAvgOpenRate || selectedStudy.localAvgClickRate || selectedStudy.localSends ? (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-teal-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-teal-600 mb-1">
+                          <Mail size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-teal-600">
+                          {selectedStudy.localAvgOpenRate || '-'}
+                        </p>
+                        <p className="text-xs text-gray-600">Avg Open Rate</p>
+                      </div>
+                      <div className="bg-emerald-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-emerald-600 mb-1">
+                          <MousePointerClick size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-emerald-600">
+                          {selectedStudy.localAvgClickRate || '-'}
+                        </p>
+                        <p className="text-xs text-gray-600">Avg Click Rate</p>
+                      </div>
+                      <div className="bg-cyan-50 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-cyan-600 mb-1">
+                          <Send size={16} />
+                        </div>
+                        <p className="text-2xl font-bold text-cyan-600">
+                          {selectedStudy.localSends || '-'}
+                        </p>
+                        <p className="text-xs text-gray-600">Total Sends</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-500 text-center text-sm">No local email metrics available.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Expert Outreach */}
+                {(selectedStudy.expertsContacted || selectedStudy.expertResponses) && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                      Expert Outreach
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedStudy.expertsContacted && (
+                        <div className="bg-amber-50 rounded-lg p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-amber-600 mb-1">
+                            <Users size={16} />
+                          </div>
+                          <p className="text-2xl font-bold text-amber-600">
+                            {selectedStudy.expertsContacted}
+                          </p>
+                          <p className="text-xs text-gray-600">Experts Contacted</p>
+                        </div>
+                      )}
+                      {selectedStudy.expertResponses && (
+                        <div className="bg-orange-50 rounded-lg p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-orange-600 mb-1">
+                            <Mail size={16} />
+                          </div>
+                          <p className="text-2xl font-bold text-orange-600">
+                            {selectedStudy.expertResponses}
+                          </p>
+                          <p className="text-xs text-gray-600">Expert Responses</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Content Calendar Status */}
+                {selectedStudy.inContentCalendar && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                      Content Calendar
+                    </h3>
+                    <div className="bg-ls-green-lighter rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Calendar size={18} className="text-ls-green" />
+                        <span className="font-medium text-ls-green">This study is in the Content Calendar</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {selectedStudy.calendarEntry?.storyTitle && (
+                          <div>
+                            <span className="text-gray-500">Story Title:</span>
+                            <p className="font-medium text-gray-900">{selectedStudy.calendarEntry.storyTitle}</p>
+                          </div>
+                        )}
+                        {selectedStudy.calendarEntry?.pitchDate && (
+                          <div>
+                            <span className="text-gray-500">Pitch Date:</span>
+                            <p className="font-medium text-gray-900">{formatDate(selectedStudy.calendarEntry.pitchDate)}</p>
+                          </div>
+                        )}
+                        {selectedStudy.calendarEntry?.status && (
+                          <div>
+                            <span className="text-gray-500">Status:</span>
+                            <p className="font-medium text-gray-900">{selectedStudy.calendarEntry.status}</p>
+                          </div>
+                        )}
+                        {selectedStudy.calendarEntry?.productionDate && (
+                          <div>
+                            <span className="text-gray-500">Production Date:</span>
+                            <p className="font-medium text-gray-900">{formatDate(selectedStudy.calendarEntry.productionDate)}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===== LINKS TAB ===== */}
+            {activeDetailTab === 'links' && (
+              <div className="space-y-6">
+                {/* Total Links */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Total Links</h3>
+                  <div className="bg-ls-green-lighter rounded-lg p-6 text-center">
+                    <div className="flex items-center justify-center gap-2 text-ls-green mb-2">
+                      <Link2 size={24} />
+                    </div>
+                    <p className="text-4xl font-bold text-ls-green">
+                      {totalLinksFromYears || '-'}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">Total Links Earned</p>
+                  </div>
+                </div>
+
+                {/* Links by Year */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Links by Year</h3>
+                  {linksByYear.some(l => l.count > 0) ? (
+                    <div className="space-y-3">
+                      {linksByYear.map(({ year, count }) => (
+                        <div key={year} className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-gray-700 w-12">{year}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+                            <div
+                              className="bg-ls-green h-full rounded-full flex items-center justify-end pr-2 transition-all"
+                              style={{ width: count > 0 ? `${Math.max((count / maxYearLinks) * 100, 8)}%` : '0%' }}
+                            >
+                              {count > 0 && (
+                                <span className="text-xs font-semibold text-white">{count}</span>
+                              )}
+                            </div>
+                          </div>
+                          {count === 0 && (
+                            <span className="text-sm text-gray-400">0</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-500 text-center text-sm">No yearly link breakdown available.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Link Type Breakdown */}
+                {(selectedStudy.doFollowLinks || selectedStudy.noFollowLinks) && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Link Types</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedStudy.doFollowLinks && (
+                        <div className="bg-green-50 rounded-lg p-4 text-center">
+                          <p className="text-2xl font-bold text-green-600">{selectedStudy.doFollowLinks}</p>
+                          <p className="text-xs text-gray-600">DoFollow</p>
+                        </div>
+                      )}
+                      {selectedStudy.noFollowLinks && (
+                        <div className="bg-gray-50 rounded-lg p-4 text-center">
+                          <p className="text-2xl font-bold text-gray-600">{selectedStudy.noFollowLinks}</p>
+                          <p className="text-xs text-gray-600">NoFollow</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!selectedStudy.hasSheetData && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-gray-500 text-center">
+                      No link data available for this study.
+                      <br />
+                      <span className="text-sm">Add this URL to the Study Story Data sheet to track links.</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===== RELATED & NOTES TAB ===== */}
+            {activeDetailTab === 'related' && (
+              <div className="space-y-6">
+                {/* Sheet Notes */}
                 {selectedStudy.notes && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-1">Notes</h4>
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Sheet Notes</h3>
                     <p className="text-sm text-gray-600 bg-yellow-50 p-3 rounded-lg">
                       {selectedStudy.notes}
                     </p>
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <p className="text-gray-500 text-center">
-                  No performance data available for this study.
-                  <br />
-                  <span className="text-sm">
-                    Add this URL to the Study Story Data sheet to track metrics.
-                  </span>
-                </p>
-              </div>
-            )}
 
-            {/* Similar Studies */}
-            {similarStudies.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
-                  Other {selectedStudy.brand} Studies
-                </h3>
-                <div className="space-y-2">
-                  {similarStudies.map((study) => (
-                    <button
-                      key={study.id}
-                      onClick={() => setSelectedStudy(study)}
-                      className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <p className="font-medium text-gray-900 text-sm truncate">
-                        {study.title}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {formatDate(study.publishDate)}
-                        {study.studyLinkNumber && ` • ${study.studyLinkNumber} links`}
-                      </p>
-                    </button>
-                  ))}
+                {/* Editable Comments */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
+                    <MessageSquare size={16} />
+                    Notes & Comments
+                  </h3>
+                  <textarea
+                    value={archiveComments[commentKey] || ''}
+                    onChange={(e) => updateArchiveComment(commentKey, e.target.value)}
+                    placeholder="Add notes or comments about this story..."
+                    rows={4}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-ls-green focus:ring-1 focus:ring-ls-green resize-none"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Comments are saved automatically to your browser.</p>
                 </div>
+
+                {/* Similar Studies */}
+                {similarStudies.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                      Other {selectedStudy.brand} Studies
+                    </h3>
+                    <div className="space-y-2">
+                      {similarStudies.map((study) => (
+                        <button
+                          key={study.id}
+                          onClick={() => { setSelectedStudy(study); setActiveDetailTab('overview'); }}
+                          className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          <p className="font-medium text-gray-900 text-sm truncate">
+                            {study.title}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {formatDate(study.publishDate)}
+                            {study.studyLinkNumber && ` \u2022 ${study.studyLinkNumber} links`}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Footer */}
-          <div className="border-t bg-gray-50 px-6 py-4 flex justify-between gap-3">
+          <div className="border-t bg-gray-50 px-6 py-4 flex justify-between gap-3 flex-shrink-0">
             <button
               onClick={() => loadSheetData()}
               className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
@@ -1516,6 +1764,40 @@ export default function StoryArchive() {
             />
           </div>
 
+          {/* Pitched Filter */}
+          <div className="relative">
+            <select
+              value={pitchedFilter}
+              onChange={(e) => setPitchedFilter(e.target.value)}
+              className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-ls-green focus:border-transparent"
+            >
+              <option value="All">All Pitch Status</option>
+              <option value="Pitched">Pitched</option>
+              <option value="Not Pitched">Not Pitched</option>
+            </select>
+            <ChevronDown
+              size={16}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+            />
+          </div>
+
+          {/* Metrics Filter */}
+          <div className="relative">
+            <select
+              value={metricsFilter}
+              onChange={(e) => setMetricsFilter(e.target.value)}
+              className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-ls-green focus:border-transparent"
+            >
+              <option value="All">All Metrics</option>
+              <option value="Has Metrics">Has Metrics</option>
+              <option value="No Metrics">No Metrics</option>
+            </select>
+            <ChevronDown
+              size={16}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+            />
+          </div>
+
           {/* Sort */}
           <div className="relative">
             <select
@@ -1526,6 +1808,8 @@ export default function StoryArchive() {
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
               <option value="links">Most Links</option>
+              <option value="impressions">Most Impressions</option>
+              <option value="position">Best Avg Position</option>
               <option value="performance">Highest Performance</option>
             </select>
             <ChevronDown
@@ -1628,6 +1912,8 @@ export default function StoryArchive() {
               setBrandFilter('All');
               setYearFilter('All');
               setCalendarFilter('All');
+              setPitchedFilter('All');
+              setMetricsFilter('All');
             }}
             className="text-ls-green hover:text-ls-green-light font-medium"
           >
