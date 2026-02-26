@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight, PieChart, Clock, TrendingUp } from 'lucide-react';
+import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight, PieChart, Clock, TrendingUp, UserMinus } from 'lucide-react';
 
 const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
@@ -10,6 +10,7 @@ const navItems = [
   { id: 'trending-topics', label: 'Trending Topics', icon: TrendingUp },
   { id: 'story-ideation', label: 'Story Ideation', icon: Lightbulb },
   { id: 'story-archive', label: 'Story Archive', icon: Archive },
+  { id: 'ooo-log', label: 'OOO Log', icon: UserMinus },
 ];
 
 export default function Sidebar({ activeView, setActiveView }) {

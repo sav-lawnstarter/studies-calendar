@@ -19,7 +19,7 @@ import {
 import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle, Bell, BellOff, FilePlus, ExternalLink, Loader2, Building2, Flame, CheckCircle, HelpCircle, XCircle, Newspaper } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
-import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle, fetchStoryIdeationData, appendStoryIdeation } from '../utils/googleSheets';
+import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle, fetchStoryIdeationData, appendStoryIdeation, fetchOOOLogData, appendOOOEntry, updateOOOEntry, deleteOOOEntry } from '../utils/googleSheets';
 import { fetchTeamOOOEvents, hasTeamCalendarsConfigured } from '../utils/googleCalendar';
 import {
   isNotificationSupported,
@@ -261,6 +261,9 @@ export default function ContentCalendar() {
   const [isLoadingGoogleOOO, setIsLoadingGoogleOOO] = useState(false);
   const [googleOOOError, setGoogleOOOError] = useState(null);
 
+  // Google Sheets OOO Log data (manually-added OOO - shared across team)
+  const [sheetOOO, setSheetOOO] = useState([]);
+
   // Story Ideation data from Google Sheets (shown in yellow)
   const [sheetStoryIdeation, setSheetStoryIdeation] = useState([]);
   const [isLoadingStoryIdeation, setIsLoadingStoryIdeation] = useState(false);
@@ -378,6 +381,20 @@ export default function ContentCalendar() {
     }
   }, []);
 
+  // Fetch manually-added OOO entries from Google Sheets OOO Log tab
+  const fetchSheetOOO = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) return;
+    try {
+      const data = await fetchOOOLogData(token);
+      setSheetOOO(data);
+      // Also update localStorage cache so the data persists when offline
+      saveToStorage(STORAGE_KEYS.customOOO, data);
+    } catch (err) {
+      console.warn('OOO Log fetch failed, using local cache:', err);
+    }
+  }, []);
+
   // Fetch Story Ideation data from Google Sheets
   const fetchStoryIdeation = useCallback(async () => {
     const token = getStoredToken();
@@ -401,12 +418,13 @@ export default function ContentCalendar() {
     }
   }, []);
 
-  // Combined refresh function for Content Calendar, Google OOO, and Story Ideation
+  // Combined refresh function for Content Calendar, Google OOO, Sheet OOO, and Story Ideation
   const handleRefreshAll = useCallback(() => {
     fetchContentCalendar();
     fetchGoogleOOO();
+    fetchSheetOOO();
     fetchStoryIdeation();
-  }, [fetchContentCalendar, fetchGoogleOOO, fetchStoryIdeation]);
+  }, [fetchContentCalendar, fetchGoogleOOO, fetchSheetOOO, fetchStoryIdeation]);
 
   // Load Content Calendar data, OOO, and Story Ideation on mount
   useEffect(() => {
@@ -477,8 +495,19 @@ export default function ContentCalendar() {
       });
     });
 
-    // Add custom OOO
+    // Add custom OOO (localStorage-only, used as fallback when not authenticated)
     customOOO.forEach((ooo) => {
+      // Skip if a Sheets version already covers this (avoid duplicates after migration)
+      if (!hiddenEvents.includes(ooo.id)) {
+        events.push({
+          ...ooo,
+          displayType: 'ooo',
+        });
+      }
+    });
+
+    // Add OOO entries from Google Sheets OOO Log (shared across team)
+    sheetOOO.forEach((ooo) => {
       if (!hiddenEvents.includes(ooo.id)) {
         events.push({
           ...ooo,
@@ -533,7 +562,7 @@ export default function ContentCalendar() {
     });
 
     return events;
-  }, [contentCalendarData, sheetStoryIdeation, customStories, customOOO, googleCalendarOOO, customBlockedDates, hiddenEvents, eventOverrides]);
+  }, [contentCalendarData, sheetStoryIdeation, customStories, customOOO, sheetOOO, googleCalendarOOO, customBlockedDates, hiddenEvents, eventOverrides]);
 
   // Handle notification permission request
   const handleEnableNotifications = async () => {
@@ -770,46 +799,99 @@ export default function ContentCalendar() {
   };
 
   // Add a new OOO
-  const handleAddOOO = (oooData) => {
-    const newOOO = {
-      id: `custom-ooo-${Date.now()}`,
-      ...oooData,
-      type: 'ooo',
-    };
-    setCustomOOO(prev => [...prev, newOOO]);
+  const handleAddOOO = async (oooData) => {
     setShowAddOOOModal(false);
     setEditingOOO(null);
+
+    const token = getStoredToken();
+    if (token) {
+      // Save to Google Sheets — it becomes a shared entry visible to all team members
+      try {
+        await appendOOOEntry(token, oooData);
+        await fetchSheetOOO(); // Refresh to get updated list with correct rowIndices
+      } catch (err) {
+        console.warn('Failed to save OOO to Sheets, saving locally:', err);
+        // Fall back to localStorage
+        const newOOO = { id: `custom-ooo-${Date.now()}`, ...oooData, type: 'ooo' };
+        setCustomOOO(prev => [...prev, newOOO]);
+      }
+    } else {
+      // Not authenticated — save to localStorage only
+      const newOOO = { id: `custom-ooo-${Date.now()}`, ...oooData, type: 'ooo' };
+      setCustomOOO(prev => [...prev, newOOO]);
+    }
   };
 
-  // Edit an OOO event: update custom ones in state, override Google Calendar ones with a custom copy
-  const handleEditOOO = (oooId, oooData) => {
-    if (oooId.startsWith('custom-ooo-')) {
+  // Edit an OOO event
+  const handleEditOOO = async (oooId, oooData) => {
+    setShowAddOOOModal(false);
+    setEditingOOO(null);
+
+    if (oooId.startsWith('ooo-sheet-')) {
+      // Sheets entry — update in Google Sheets
+      const entry = sheetOOO.find(o => o.id === oooId);
+      if (entry?.rowIndex) {
+        const token = getStoredToken();
+        if (token) {
+          try {
+            await updateOOOEntry(token, entry.rowIndex, oooData);
+            await fetchSheetOOO();
+          } catch (err) {
+            console.warn('Failed to update OOO in Sheets:', err);
+          }
+        }
+      }
+    } else if (oooId.startsWith('custom-ooo-')) {
+      // localStorage entry — update locally, then try to migrate to Sheets
       setCustomOOO(prev => prev.map(o =>
         o.id === oooId ? { ...o, ...oooData } : o
       ));
     } else {
-      // Hide the original Google Calendar event and create a local custom override
+      // Google Calendar event — hide original and create a new custom/sheet entry
       setHiddenEvents(prev => [...prev, oooId]);
-      const newOOO = {
-        id: `custom-ooo-${Date.now()}`,
-        ...oooData,
-        type: 'ooo',
-      };
-      setCustomOOO(prev => [...prev, newOOO]);
+      const token = getStoredToken();
+      if (token) {
+        try {
+          await appendOOOEntry(token, oooData);
+          await fetchSheetOOO();
+        } catch (err) {
+          const newOOO = { id: `custom-ooo-${Date.now()}`, ...oooData, type: 'ooo' };
+          setCustomOOO(prev => [...prev, newOOO]);
+        }
+      } else {
+        const newOOO = { id: `custom-ooo-${Date.now()}`, ...oooData, type: 'ooo' };
+        setCustomOOO(prev => [...prev, newOOO]);
+      }
     }
-    setShowAddOOOModal(false);
-    setEditingOOO(null);
   };
 
-  // Delete an OOO event: remove custom ones from state, hide Google Calendar ones locally
-  const handleDeleteCustomOOO = (oooId) => {
-    if (oooId.startsWith('custom-ooo-')) {
-      setCustomOOO(prev => prev.filter(o => o.id !== oooId));
-    } else {
-      setHiddenEvents(prev => [...prev, oooId]);
-    }
+  // Delete an OOO event
+  const handleDeleteCustomOOO = async (oooId) => {
     setShowAddOOOModal(false);
     setEditingOOO(null);
+
+    if (oooId.startsWith('ooo-sheet-')) {
+      // Sheets entry — delete from Google Sheets
+      const entry = sheetOOO.find(o => o.id === oooId);
+      if (entry?.rowIndex) {
+        const token = getStoredToken();
+        if (token) {
+          try {
+            await deleteOOOEntry(token, entry.rowIndex);
+            await fetchSheetOOO();
+          } catch (err) {
+            console.warn('Failed to delete OOO from Sheets:', err);
+            // Optimistically remove from local state
+            setSheetOOO(prev => prev.filter(o => o.id !== oooId));
+          }
+        }
+      }
+    } else if (oooId.startsWith('custom-ooo-')) {
+      setCustomOOO(prev => prev.filter(o => o.id !== oooId));
+    } else {
+      // Google Calendar event — hide it locally
+      setHiddenEvents(prev => [...prev, oooId]);
+    }
   };
 
   // Add a new blocked date
