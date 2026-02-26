@@ -144,6 +144,7 @@ export default function ContentCalendar() {
   // Modal states for adding new items
   const [showAddStoryModal, setShowAddStoryModal] = useState(false);
   const [showAddOOOModal, setShowAddOOOModal] = useState(false);
+  const [editingOOO, setEditingOOO] = useState(null);
   const [showBlockDateModal, setShowBlockDateModal] = useState(false);
   const [showNewDraftModal, setShowNewDraftModal] = useState(false);
   const [newDraftLoading, setNewDraftLoading] = useState(false);
@@ -619,6 +620,10 @@ export default function ContentCalendar() {
       // Open edit modal for blocked dates and high traffic events
       setSelectedEvent(event);
       setShowEventModal(true);
+    } else if (event.displayType === 'ooo' && event.id?.startsWith('custom-ooo-')) {
+      // Open edit modal for manually added OOO events
+      setEditingOOO(event);
+      setShowAddOOOModal(true);
     }
   };
 
@@ -699,6 +704,23 @@ export default function ContentCalendar() {
     };
     setCustomOOO(prev => [...prev, newOOO]);
     setShowAddOOOModal(false);
+    setEditingOOO(null);
+  };
+
+  // Edit an existing custom OOO
+  const handleEditOOO = (oooData) => {
+    setCustomOOO(prev => prev.map(o =>
+      o.id === editingOOO.id ? { ...o, ...oooData } : o
+    ));
+    setShowAddOOOModal(false);
+    setEditingOOO(null);
+  };
+
+  // Delete a custom OOO permanently
+  const handleDeleteCustomOOO = (oooId) => {
+    setCustomOOO(prev => prev.filter(o => o.id !== oooId));
+    setShowAddOOOModal(false);
+    setEditingOOO(null);
   };
 
   // Add a new blocked date
@@ -1033,18 +1055,24 @@ export default function ContentCalendar() {
 
   // Add OOO Modal
   const AddOOOModal = () => {
-    const [title, setTitle] = useState('');
-    const [date, setDate] = useState(format(currentDate, 'yyyy-MM-dd'));
-    const [endDate, setEndDate] = useState('');
+    const isEditing = !!editingOOO;
+    const [title, setTitle] = useState(editingOOO?.title || '');
+    const [date, setDate] = useState(editingOOO?.date || format(currentDate, 'yyyy-MM-dd'));
+    const [endDate, setEndDate] = useState(editingOOO?.endDate || '');
+
+    const handleClose = () => {
+      setShowAddOOOModal(false);
+      setEditingOOO(null);
+    };
 
     if (!showAddOOOModal) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddOOOModal(false)}>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleClose}>
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between p-4 border-b">
-            <h3 className="text-lg font-semibold text-gray-900">Add OOO</h3>
-            <button onClick={() => setShowAddOOOModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+            <h3 className="text-lg font-semibold text-gray-900">{isEditing ? 'Edit OOO' : 'Add OOO'}</h3>
+            <button onClick={handleClose} className="p-1 hover:bg-gray-100 rounded-lg">
               <X size={20} className="text-gray-500" />
             </button>
           </div>
@@ -1078,14 +1106,29 @@ export default function ContentCalendar() {
               />
             </div>
           </div>
-          <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+          <div className="p-4 border-t bg-gray-50 rounded-b-xl space-y-2">
             <button
-              onClick={() => handleAddOOO({ title, date, endDate: endDate || undefined })}
+              onClick={() => {
+                if (isEditing) {
+                  handleEditOOO({ title, date, endDate: endDate || undefined });
+                } else {
+                  handleAddOOO({ title, date, endDate: endDate || undefined });
+                }
+              }}
               disabled={!title.trim()}
               className="w-full px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add OOO
+              {isEditing ? 'Update OOO' : 'Add OOO'}
             </button>
+            {isEditing && (
+              <button
+                onClick={() => handleDeleteCustomOOO(editingOOO.id)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              >
+                <Trash2 size={18} />
+                Delete OOO
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1167,7 +1210,8 @@ export default function ContentCalendar() {
 
   const renderEvent = (event) => {
     const style = getEventStyle(event.displayType);
-    const isClickable = ['approvedStory', 'storyIdeation', 'story', 'blocked', 'highTraffic', 'holiday'].includes(event.displayType);
+    const isClickable = ['approvedStory', 'storyIdeation', 'story', 'blocked', 'highTraffic', 'holiday'].includes(event.displayType)
+      || (event.displayType === 'ooo' && event.id?.startsWith('custom-ooo-'));
 
     return (
       <div
