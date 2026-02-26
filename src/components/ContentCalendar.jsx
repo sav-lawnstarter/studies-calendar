@@ -694,8 +694,8 @@ export default function ContentCalendar() {
       // Open edit modal for blocked dates and high traffic events
       setSelectedEvent(event);
       setShowEventModal(true);
-    } else if (event.displayType === 'ooo' && event.id?.startsWith('custom-ooo-')) {
-      // Open edit modal for manually added OOO events
+    } else if (event.displayType === 'ooo') {
+      // Open edit modal for all OOO events
       setEditingOOO(event);
       setShowAddOOOModal(true);
     }
@@ -781,18 +781,33 @@ export default function ContentCalendar() {
     setEditingOOO(null);
   };
 
-  // Edit an existing custom OOO
+  // Edit an OOO event: update custom ones in state, override Google Calendar ones with a custom copy
   const handleEditOOO = (oooId, oooData) => {
-    setCustomOOO(prev => prev.map(o =>
-      o.id === oooId ? { ...o, ...oooData } : o
-    ));
+    if (oooId.startsWith('custom-ooo-')) {
+      setCustomOOO(prev => prev.map(o =>
+        o.id === oooId ? { ...o, ...oooData } : o
+      ));
+    } else {
+      // Hide the original Google Calendar event and create a local custom override
+      setHiddenEvents(prev => [...prev, oooId]);
+      const newOOO = {
+        id: `custom-ooo-${Date.now()}`,
+        ...oooData,
+        type: 'ooo',
+      };
+      setCustomOOO(prev => [...prev, newOOO]);
+    }
     setShowAddOOOModal(false);
     setEditingOOO(null);
   };
 
-  // Delete a custom OOO permanently
+  // Delete an OOO event: remove custom ones from state, hide Google Calendar ones locally
   const handleDeleteCustomOOO = (oooId) => {
-    setCustomOOO(prev => prev.filter(o => o.id !== oooId));
+    if (oooId.startsWith('custom-ooo-')) {
+      setCustomOOO(prev => prev.filter(o => o.id !== oooId));
+    } else {
+      setHiddenEvents(prev => [...prev, oooId]);
+    }
     setShowAddOOOModal(false);
     setEditingOOO(null);
   };
@@ -1203,7 +1218,7 @@ export default function ContentCalendar() {
   const renderEvent = (event) => {
     const style = getEventStyle(event.displayType);
     const isClickable = ['approvedStory', 'storyIdeation', 'story', 'blocked', 'highTraffic', 'holiday'].includes(event.displayType)
-      || (event.displayType === 'ooo' && event.id?.startsWith('custom-ooo-'));
+      || event.displayType === 'ooo';
 
     return (
       <div
