@@ -8,6 +8,7 @@ import StoryPitchAnalysis from './components/StoryPitchAnalysis';
 import CompetitorLog from './components/CompetitorLog';
 import TrendingTopics from './components/TrendingTopics';
 import DueThisWeek from './components/DueThisWeek';
+import OOOLog from './components/OOOLog';
 
 function App() {
   const [activeView, setActiveView] = useState('content-calendar');
@@ -30,6 +31,8 @@ function App() {
         return <CompetitorLog />;
       case 'trending-topics':
         return <TrendingTopics />;
+      case 'ooo-log':
+        return <OOOLog />;
       default:
         return <ContentCalendar />;
     }

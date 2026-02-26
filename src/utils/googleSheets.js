@@ -643,3 +643,159 @@ export const deleteCompetitorLog = async (accessToken, rowIndex) => {
 
   return response.json();
 };
+
+// ============================================
+// OOO LOG FUNCTIONS
+// ============================================
+
+// OOO Log tab (same spreadsheet as Content Calendar)
+const OOO_LOG_SHEET_NAME = 'OOO Log';
+
+// OOO Log columns: A: Name/Description, B: Start Date, C: End Date
+
+const formatOOODateForSheet = (dateStr) => {
+  if (!dateStr) return '';
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) return dateStr;
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return `${parseInt(match[2])}/${parseInt(match[3])}/${match[1]}`;
+  return dateStr;
+};
+
+const parseOOOLogData = (values) => {
+  if (!values || values.length < 2) return [];
+  return values.slice(1).map((row, index) => ({
+    id: `ooo-sheet-${index}`,
+    rowIndex: index + 2, // 1-indexed + header row
+    title: row[0] || '',
+    date: row[1] ? convertDateFormat(row[1]) : '',
+    endDate: row[2] ? convertDateFormat(row[2]) : undefined,
+    type: 'ooo',
+  })).filter(entry => entry.title && entry.date);
+};
+
+export const fetchOOOLogData = async (accessToken) => {
+  const range = `${OOO_LOG_SHEET_NAME}!A:C`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONTENT_CALENDAR_SPREADSHEET_ID}/values/${encodeURIComponent(range)}`;
+
+  const response = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      throw new Error('Token expired. Please re-authenticate.');
+    }
+    throw new Error(`Failed to fetch OOO Log: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return parseOOOLogData(data.values);
+};
+
+export const appendOOOEntry = async (accessToken, entry) => {
+  const range = `${OOO_LOG_SHEET_NAME}!A:C`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONTENT_CALENDAR_SPREADSHEET_ID}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+
+  const values = [[
+    entry.title || '',
+    formatOOODateForSheet(entry.date),
+    formatOOODateForSheet(entry.endDate),
+  ]];
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ values }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      throw new Error('Token expired. Please re-authenticate.');
+    }
+    throw new Error(`Failed to add OOO entry: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
+export const updateOOOEntry = async (accessToken, rowIndex, entry) => {
+  const range = `${OOO_LOG_SHEET_NAME}!A${rowIndex}:C${rowIndex}`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONTENT_CALENDAR_SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+
+  const values = [[
+    entry.title || '',
+    formatOOODateForSheet(entry.date),
+    formatOOODateForSheet(entry.endDate),
+  ]];
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ values }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      throw new Error('Token expired. Please re-authenticate.');
+    }
+    throw new Error(`Failed to update OOO entry: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
+export const deleteOOOEntry = async (accessToken, rowIndex) => {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONTENT_CALENDAR_SPREADSHEET_ID}:batchUpdate`;
+
+  const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${CONTENT_CALENDAR_SPREADSHEET_ID}?fields=sheets.properties`;
+  const metadataResponse = await fetch(metadataUrl, {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+
+  if (!metadataResponse.ok) throw new Error('Failed to get sheet metadata');
+
+  const metadata = await metadataResponse.json();
+  const oooSheet = metadata.sheets.find(s => s.properties.title === OOO_LOG_SHEET_NAME);
+  if (!oooSheet) throw new Error('OOO Log sheet not found in spreadsheet');
+
+  const sheetId = oooSheet.properties.sheetId;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: 'ROWS',
+            startIndex: rowIndex - 1,
+            endIndex: rowIndex,
+          },
+        },
+      }],
+    }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      throw new Error('Token expired. Please re-authenticate.');
+    }
+    throw new Error(`Failed to delete OOO entry: ${response.statusText}`);
+  }
+
+  return response.json();
+};
