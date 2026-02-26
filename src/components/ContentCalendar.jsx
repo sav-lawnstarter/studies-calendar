@@ -134,6 +134,80 @@ const saveToStorage = (key, value) => {
   }
 };
 
+function AddOOOModal({ editingOOO, defaultDate, onAdd, onEdit, onDelete, onClose }) {
+  const isEditing = !!editingOOO;
+  const [title, setTitle] = useState(editingOOO?.title || '');
+  const [date, setDate] = useState(editingOOO?.date || defaultDate);
+  const [endDate, setEndDate] = useState(editingOOO?.endDate || '');
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-semibold text-gray-900">{isEditing ? 'Edit OOO' : 'Add OOO'}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X size={20} className="text-gray-500" />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name / Description</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+              placeholder="e.g., John - Vacation"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">End Date (optional)</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
+            />
+          </div>
+        </div>
+        <div className="p-4 border-t bg-gray-50 rounded-b-xl space-y-2">
+          <button
+            onClick={() => {
+              if (isEditing) {
+                onEdit(editingOOO.id, { title, date, endDate: endDate || undefined });
+              } else {
+                onAdd({ title, date, endDate: endDate || undefined });
+              }
+            }}
+            disabled={!title.trim()}
+            className="w-full px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isEditing ? 'Update OOO' : 'Add OOO'}
+          </button>
+          {isEditing && (
+            <button
+              onClick={() => onDelete(editingOOO.id)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+            >
+              <Trash2 size={18} />
+              Delete OOO
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ContentCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('Month');
@@ -708,9 +782,9 @@ export default function ContentCalendar() {
   };
 
   // Edit an existing custom OOO
-  const handleEditOOO = (oooData) => {
+  const handleEditOOO = (oooId, oooData) => {
     setCustomOOO(prev => prev.map(o =>
-      o.id === editingOOO.id ? { ...o, ...oooData } : o
+      o.id === oooId ? { ...o, ...oooData } : o
     ));
     setShowAddOOOModal(false);
     setEditingOOO(null);
@@ -1047,88 +1121,6 @@ export default function ContentCalendar() {
               {isSavingStoryIdeation && <Loader2 size={16} className="animate-spin" />}
               {isSavingStoryIdeation ? 'Saving...' : 'Add Story Ideation'}
             </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Add OOO Modal
-  const AddOOOModal = () => {
-    const isEditing = !!editingOOO;
-    const [title, setTitle] = useState(editingOOO?.title || '');
-    const [date, setDate] = useState(editingOOO?.date || format(currentDate, 'yyyy-MM-dd'));
-    const [endDate, setEndDate] = useState(editingOOO?.endDate || '');
-
-    const handleClose = () => {
-      setShowAddOOOModal(false);
-      setEditingOOO(null);
-    };
-
-    if (!showAddOOOModal) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleClose}>
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between p-4 border-b">
-            <h3 className="text-lg font-semibold text-gray-900">{isEditing ? 'Edit OOO' : 'Add OOO'}</h3>
-            <button onClick={handleClose} className="p-1 hover:bg-gray-100 rounded-lg">
-              <X size={20} className="text-gray-500" />
-            </button>
-          </div>
-          <div className="p-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name / Description</label>
-              <input
-                type="text"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
-                placeholder="e.g., John - Vacation"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={e => setDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date (optional)</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ls-orange focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div className="p-4 border-t bg-gray-50 rounded-b-xl space-y-2">
-            <button
-              onClick={() => {
-                if (isEditing) {
-                  handleEditOOO({ title, date, endDate: endDate || undefined });
-                } else {
-                  handleAddOOO({ title, date, endDate: endDate || undefined });
-                }
-              }}
-              disabled={!title.trim()}
-              className="w-full px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isEditing ? 'Update OOO' : 'Add OOO'}
-            </button>
-            {isEditing && (
-              <button
-                onClick={() => handleDeleteCustomOOO(editingOOO.id)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-              >
-                <Trash2 size={18} />
-                Delete OOO
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -1943,7 +1935,17 @@ export default function ContentCalendar() {
       <AddStoryModal />
 
       {/* Add OOO Modal */}
-      <AddOOOModal />
+      {showAddOOOModal && (
+        <AddOOOModal
+          key={editingOOO?.id || 'add'}
+          editingOOO={editingOOO}
+          defaultDate={format(currentDate, 'yyyy-MM-dd')}
+          onAdd={handleAddOOO}
+          onEdit={handleEditOOO}
+          onDelete={handleDeleteCustomOOO}
+          onClose={() => { setShowAddOOOModal(false); setEditingOOO(null); }}
+        />
+      )}
 
       {/* Block Date Modal */}
       <BlockDateModal />
