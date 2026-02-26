@@ -1,9 +1,10 @@
 import React from 'react';
-import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight, PieChart, Clock, TrendingUp } from 'lucide-react';
+import { Calendar, BarChart3, Archive, FileText, Lightbulb, ChevronRight, PieChart, Clock, TrendingUp, FileWarning } from 'lucide-react';
 
 const navItems = [
   { id: 'content-calendar', label: 'Content Calendar', icon: Calendar },
   { id: 'due-this-week', label: 'Due This Week', icon: Clock },
+  { id: 'missing-prs', label: 'Missing PRs', icon: FileWarning },
   { id: 'running-totals', label: 'Running Totals', icon: BarChart3 },
   { id: 'story-pitch-analysis', label: 'Story & Pitch Analysis', icon: PieChart },
   { id: 'competitor-log', label: 'Competitor Log', icon: FileText },

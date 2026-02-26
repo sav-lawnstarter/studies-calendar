@@ -8,6 +8,7 @@ import StoryPitchAnalysis from './components/StoryPitchAnalysis';
 import CompetitorLog from './components/CompetitorLog';
 import TrendingTopics from './components/TrendingTopics';
 import DueThisWeek from './components/DueThisWeek';
+import MissingPRs from './components/MissingPRs';
 
 function App() {
   const [activeView, setActiveView] = useState('content-calendar');
@@ -18,6 +19,8 @@ function App() {
         return <ContentCalendar />;
       case 'due-this-week':
         return <DueThisWeek />;
+      case 'missing-prs':
+        return <MissingPRs />;
       case 'running-totals':
         return <RunningTotals />;
       case 'story-archive':
