@@ -530,29 +530,13 @@ export default function RunningTotals() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Users size={20} className="text-blue-600" />
-              </div>
-              <span className="text-sm text-gray-500">Experts Contacted</span>
-            </div>
-            <p className="text-4xl font-bold text-blue-600">{stats.totalExpertsContacted}</p>
-            <p className="text-sm text-gray-500 mt-1">Total outreach this quarter</p>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border p-6">
-            <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-purple-100 rounded-lg">
                 <MessageSquare size={20} className="text-purple-600" />
               </div>
               <span className="text-sm text-gray-500">Experts Responded</span>
             </div>
             <p className="text-4xl font-bold text-purple-600">{stats.totalExpertsResponded}</p>
-            <p className="text-sm text-gray-500 mt-1">
-              {stats.totalExpertsContacted > 0
-                ? `${Math.round((stats.totalExpertsResponded / stats.totalExpertsContacted) * 100)}% response rate`
-                : 'No outreach recorded'
-              }
-            </p>
+            <p className="text-sm text-gray-500 mt-1">Total responses this quarter</p>
           </div>
         </div>
 
