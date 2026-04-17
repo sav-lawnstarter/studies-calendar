@@ -7,8 +7,8 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.file', // Google Drive (for creating new drafts from templates)
 ].join(' ');
 
-// Study Story Data sheet (for Story & Pitch Analysis)
-const STUDY_SPREADSHEET_ID = '1L8jwOxU_9lLetVOyuNmdov9p56b4ypbIFCjfjJAiZt8';
+// Study Story Data sheet (for Story & Pitch Analysis) — tab in the editorial dashboard spreadsheet
+const STUDY_SPREADSHEET_ID = '1ELXVk6Zu9U3ISiv7zQM0rf9GCi_v2OrRzNat9cKGw7M';
 const STUDY_SHEET_NAME = 'Study Story Data';
 
 // Content Calendar Planning sheet (for approved stories on calendar)
