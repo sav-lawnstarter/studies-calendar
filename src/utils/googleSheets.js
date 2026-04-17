@@ -43,6 +43,10 @@ export const loadGoogleScript = () => {
 };
 
 // Get stored token
+export const clearStoredToken = () => {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+};
+
 export const getStoredToken = () => {
   try {
     const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
