@@ -16,10 +16,10 @@ import {
   parseISO,
   differenceInDays,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle, Bell, BellOff, FilePlus, ExternalLink, Loader2, Building2, Flame, CheckCircle, HelpCircle, XCircle, Newspaper } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Download, Calendar, Ban, X, Trash2, RefreshCw, Eye, EyeOff, AlertCircle, Bell, BellOff, FilePlus, ExternalLink, Loader2, Building2, Flame, CheckCircle, HelpCircle, XCircle, Newspaper, LogIn, LogOut } from 'lucide-react';
 import { preloadedEvents, sampleStories, sampleOOO, sampleBlockedDates } from '../data/events';
 import StoryDetailModal from './StoryDetailModal';
-import { getStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle, fetchStoryIdeationData, appendStoryIdeation, fetchOOOLogData, appendOOOEntry, updateOOOEntry, deleteOOOEntry } from '../utils/googleSheets';
+import { getStoredToken, clearStoredToken, fetchContentCalendarData, loadGoogleScript, authenticateWithGoogle, fetchStoryIdeationData, appendStoryIdeation, fetchOOOLogData, appendOOOEntry, updateOOOEntry, deleteOOOEntry } from '../utils/googleSheets';
 import { fetchTeamOOOEvents, hasTeamCalendarsConfigured } from '../utils/googleCalendar';
 import {
   isNotificationSupported,
@@ -255,6 +255,8 @@ export default function ContentCalendar() {
   const [isLoadingContentCalendar, setIsLoadingContentCalendar] = useState(false);
   const [contentCalendarError, setContentCalendarError] = useState(null);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const [isAuthenticated, setIsAuthenticated] = useState(!!getStoredToken());
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   // Google Calendar OOO data (team OOO - shown in orange)
   const [googleCalendarOOO, setGoogleCalendarOOO] = useState([]);
@@ -419,6 +421,29 @@ export default function ContentCalendar() {
   }, []);
 
   // Combined refresh function for Content Calendar, Google OOO, Sheet OOO, and Story Ideation
+  const handleSignIn = useCallback(async () => {
+    if (!clientId) return;
+    setIsAuthenticating(true);
+    try {
+      await loadGoogleScript();
+      await authenticateWithGoogle(clientId);
+      setIsAuthenticated(true);
+      fetchContentCalendar();
+      fetchGoogleOOO();
+      fetchSheetOOO();
+      fetchStoryIdeation();
+    } catch (err) {
+      console.error('Sign in error:', err);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }, [clientId, fetchContentCalendar, fetchGoogleOOO, fetchSheetOOO, fetchStoryIdeation]);
+
+  const handleSignOut = useCallback(() => {
+    clearStoredToken();
+    setIsAuthenticated(false);
+  }, []);
+
   const handleRefreshAll = useCallback(() => {
     fetchContentCalendar();
     fetchGoogleOOO();
@@ -1804,13 +1829,24 @@ export default function ContentCalendar() {
               <Plus size={18} />
               Add Story
             </button>
-            <button
-              onClick={() => setShowAddOOOModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-ls-orange text-white rounded-lg hover:bg-ls-orange-bright transition-colors"
-            >
-              <Calendar size={18} />
-              Add OOO
-            </button>
+            {isAuthenticated ? (
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <LogOut size={18} />
+                Sign Out
+              </button>
+            ) : (
+              <button
+                onClick={handleSignIn}
+                disabled={isAuthenticating || !clientId}
+                className="flex items-center gap-2 px-4 py-2 bg-ls-green text-white rounded-lg hover:bg-ls-green-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <LogIn size={18} />
+                {isAuthenticating ? 'Signing In…' : 'Sign In'}
+              </button>
+            )}
             <button
               onClick={() => setShowBlockDateModal(true)}
               className="flex items-center gap-2 px-4 py-2 border border-ls-orange text-ls-orange rounded-lg hover:bg-ls-orange-light transition-colors"
