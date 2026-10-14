@@ -24,6 +24,12 @@ import {
 // Local storage key for comments
 const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
 
+// Short labels for the Brand column (full name shows on hover)
+const BRAND_ABBREVIATIONS = {
+  'LawnStarter': 'LS',
+  'Lawn Love': 'LL',
+};
+
 // Helper to parse numbers that may contain commas (e.g., "1,174" -> 1174)
 const parseNumberWithCommas = (value) => {
   if (!value) return 0;
@@ -861,8 +867,8 @@ export default function StoryPitchAnalysis() {
               <thead>
                 <tr className="bg-gray-50">
                   <SortableHeader column="rank" label="Rank" className="w-16" />
-                  <SortableHeader column="brand" label="Brand" className="text-left" />
-                  <SortableHeader column="study_title" label="Study Title" className="text-left" />
+                  <SortableHeader column="brand" label="Brand" className="text-left !px-2 w-14" />
+                  <SortableHeader column="study_title" label="Study Title" className="text-left min-w-[280px]" />
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b w-20">URL</th>
                   <SortableHeader column="linkCount" label="Study<br/>Link #" />
                   <SortableHeader column="links2025" label="2025<br/>Link #" />
@@ -889,10 +895,10 @@ export default function StoryPitchAnalysis() {
                         #{row.rank}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 border-b">
-                      {row.brand || '-'}
+                    <td className="px-2 py-3 text-sm text-gray-900 border-b w-14 whitespace-nowrap" title={row.brand || undefined}>
+                      {BRAND_ABBREVIATIONS[row.brand] || row.brand || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm border-b max-w-xs">
+                    <td className="px-4 py-3 text-sm border-b min-w-[280px] max-w-md">
                       <button
                         onClick={() => setSelectedStory(row)}
                         className="text-ls-green hover:underline text-left line-clamp-2 break-words block w-full"
