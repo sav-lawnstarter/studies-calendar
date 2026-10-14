@@ -895,7 +895,7 @@ export default function StoryPitchAnalysis() {
                     <td className="px-4 py-3 text-sm border-b max-w-xs">
                       <button
                         onClick={() => setSelectedStory(row)}
-                        className="text-ls-green hover:underline text-left truncate block w-full"
+                        className="text-ls-green hover:underline text-left line-clamp-2 break-words block w-full"
                         title={row.study_title}
                       >
                         {getVisualIndicators(row)}{row.study_title || '-'}

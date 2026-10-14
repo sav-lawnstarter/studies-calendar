@@ -860,9 +860,9 @@ export default function TrendingTopics() {
                     </span>
                     <span className="text-xs text-gray-500">{formatRelativeTime(item.pubDate)}</span>
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2">{item.title}</h3>
+                  <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 break-words" title={item.title}>{item.title}</h3>
                   {item.description && (
-                    <p className="text-sm text-gray-500 line-clamp-2">{item.description}</p>
+                    <p className="text-sm text-gray-500 line-clamp-2 break-words" title={item.description}>{item.description}</p>
                   )}
                 </div>
                 <div className="flex flex-col gap-1">
@@ -1079,7 +1079,7 @@ export default function TrendingTopics() {
                         <span className="text-xs text-gray-500 ml-2">({topic.source})</span>
                       )}
                       {topic.notes && (
-                        <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{topic.notes}</p>
+                        <p className="text-xs text-gray-500 line-clamp-2 break-words mt-0.5" title={topic.notes}>{topic.notes}</p>
                       )}
                     </div>
                   </td>
