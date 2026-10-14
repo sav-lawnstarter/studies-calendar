@@ -747,7 +747,7 @@ export default function CompetitorLog() {
             </div>
 
             {/* Title */}
-            <h3 className="font-semibold text-gray-900 mb-1 truncate">
+            <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 break-words" title={entry.title || 'Untitled Article'}>
               {entry.title || 'Untitled Article'}
             </h3>
 
@@ -767,7 +767,7 @@ export default function CompetitorLog() {
 
             {/* Notes preview */}
             {(entry.coverageNotes || entry.qualityNotes) && (
-              <p className="text-xs text-gray-500 line-clamp-2">
+              <p className="text-xs text-gray-500 line-clamp-2 break-words" title={entry.qualityNotes || entry.coverageNotes}>
                 {entry.qualityNotes || entry.coverageNotes}
               </p>
             )}
@@ -884,7 +884,7 @@ export default function CompetitorLog() {
                             {entry.publisher}
                           </span>
                         )}
-                        <span className="font-medium text-gray-900 truncate max-w-[200px]">
+                        <span className="font-medium text-gray-900 line-clamp-2 break-words max-w-[200px]" title={entry.title || 'Untitled'}>
                           {entry.title ? `"${entry.title}"` : 'Untitled'}
                         </span>
                       </div>
@@ -912,14 +912,14 @@ export default function CompetitorLog() {
 
                     {/* Linked Story */}
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600 truncate max-w-[150px] block">
+                      <span className="text-sm text-gray-600 line-clamp-2 break-words max-w-[150px] block" title={linkedStory || undefined}>
                         {linkedStory || '-'}
                       </span>
                     </td>
 
                     {/* Notes */}
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-500 line-clamp-2 max-w-[200px]">
+                      <span className="text-sm text-gray-500 line-clamp-2 break-words max-w-[200px]" title={entry.qualityNotes || entry.coverageNotes || undefined}>
                         {entry.qualityNotes || entry.coverageNotes || '-'}
                       </span>
                     </td>

@@ -637,7 +637,7 @@ export default function StoryArchive() {
             rel="noopener noreferrer"
             className="block mb-2 group"
           >
-            <h3 className="font-semibold text-gray-900 group-hover:text-ls-green transition-colors line-clamp-2">
+            <h3 className="font-semibold text-gray-900 group-hover:text-ls-green transition-colors line-clamp-2 break-words" title={study.title}>
               {study.title}
             </h3>
           </a>
@@ -736,7 +736,8 @@ export default function StoryArchive() {
             href={study.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-medium text-gray-900 hover:text-ls-green transition-colors block truncate max-w-sm"
+            className="font-medium text-gray-900 hover:text-ls-green transition-colors block line-clamp-2 break-words max-w-sm"
+            title={study.title}
           >
             {study.title}
           </a>
@@ -1472,7 +1473,7 @@ export default function StoryArchive() {
                           onClick={() => { setSelectedStudy(study); setActiveDetailTab('overview'); }}
                           className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
                         >
-                          <p className="font-medium text-gray-900 text-sm truncate">
+                          <p className="font-medium text-gray-900 text-sm line-clamp-2 break-words" title={study.title}>
                             {study.title}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">

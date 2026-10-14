@@ -308,7 +308,7 @@ export default function DueThisWeek() {
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <h4 className="font-medium text-gray-900 truncate">
+                            <h4 className="font-medium text-gray-900 line-clamp-2 break-words" title={deadline.storyTitle}>
                               {deadline.storyTitle}
                             </h4>
                             {deadline.studyUrl && (

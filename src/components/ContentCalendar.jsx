@@ -1332,7 +1332,7 @@ export default function ContentCalendar() {
         key={event.id}
         onClick={(e) => handleEventClick(event, e)}
         className={`
-          text-xs px-2 py-1 rounded truncate mb-1 event-item
+          text-xs px-2 py-1 rounded line-clamp-2 break-words mb-1 event-item
           ${style}
           ${isClickable ? 'cursor-pointer hover:opacity-90' : ''}
         `}
@@ -1571,7 +1571,7 @@ export default function ContentCalendar() {
                                       href={entry.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-gray-900 hover:text-ls-green truncate max-w-[120px] block"
+                                      className="text-gray-900 hover:text-ls-green line-clamp-2 break-words max-w-[120px] block"
                                       title={entry.title || entry.url}
                                     >
                                       "{entry.title || 'Untitled'}"
@@ -1610,7 +1610,7 @@ export default function ContentCalendar() {
                                   )}
                                 </td>
                                 <td className="px-2 py-2">
-                                  <span className="text-gray-500 line-clamp-2">
+                                  <span className="text-gray-500 line-clamp-2 break-words" title={entry.qualityNotes || entry.coverageNotes || undefined}>
                                     {entry.qualityNotes || entry.coverageNotes || '-'}
                                   </span>
                                 </td>
