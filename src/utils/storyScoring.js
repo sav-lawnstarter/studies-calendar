@@ -17,7 +17,7 @@ export const SCORING_METRICS = [
     key: 'links',
     label: 'Backlinks',
     group: 'core',
-    weight: 25,
+    weight: 24,
     anchors: [[0, 0], [25, 35], [80, 75], [200, 100]],
     format: (v) => String(Math.round(v)),
   },
@@ -41,7 +41,7 @@ export const SCORING_METRICS = [
     key: 'da',
     label: 'Domain authority',
     group: 'core',
-    weight: 12,
+    weight: 11,
     anchors: [[0, 0], [40, 40], [60, 70], [80, 100]],
     format: (v) => v.toFixed(1),
   },
@@ -49,7 +49,7 @@ export const SCORING_METRICS = [
     key: 'openRate',
     label: 'National O/R',
     group: 'core',
-    weight: 8,
+    weight: 7,
     anchors: [[0, 0], [15, 40], [20, 70], [25, 100]],
     format: (v) => `${v.toFixed(1)}%`,
   },
@@ -68,6 +68,14 @@ export const SCORING_METRICS = [
     group: 'gsc',
     weight: 3,
     anchors: [[0, 0], [1000, 40], [10000, 75], [50000, 100]],
+    format: (v) => Math.round(v).toLocaleString(),
+  },
+  {
+    key: 'impressions12mo',
+    label: 'Search impressions (12 mo)',
+    group: 'gsc',
+    weight: 6,
+    anchors: [[0, 0], [10000, 40], [100000, 75], [500000, 100]],
     format: (v) => Math.round(v).toLocaleString(),
   },
   {
@@ -91,7 +99,7 @@ export const SCORING_METRICS = [
     key: 'pageViews',
     label: 'Page views (28d)',
     group: 'ga4',
-    weight: 3,
+    weight: 2,
     anchors: [[0, 0], [100, 40], [500, 75], [2000, 100]],
     format: (v) => Math.round(v).toLocaleString(),
   },
@@ -99,7 +107,7 @@ export const SCORING_METRICS = [
     key: 'engagementTime',
     label: 'Avg engagement time (28d)',
     group: 'ga4',
-    weight: 5,
+    weight: 4,
     anchors: [[0, 0], [30, 40], [90, 75], [180, 100]],
     format: (v) => `${Math.round(v)}s`,
   },
@@ -107,7 +115,7 @@ export const SCORING_METRICS = [
     key: 'scrollDepth',
     label: 'Scroll depth (28d)',
     group: 'ga4',
-    weight: 4,
+    weight: 3,
     anchors: [[0, 0], [20, 40], [50, 75], [80, 100]],
     format: (v) => `${v.toFixed(0)}%`,
   },
@@ -156,6 +164,7 @@ export const collectStoryValues = (item, cached = {}) => {
     openRate: parseMetricNumber(item.national_o_r),
     gscClicks: parseMetricNumber(cached.clicks),
     gscImpressions: parseMetricNumber(cached.impressions),
+    impressions12mo: parseMetricNumber(cached.impressions12mo),
     // Search Console returns CTR as a fraction
     gscCtr: cached.ctr === null || cached.ctr === undefined ? null : cached.ctr * 100,
     impressionsChange: parseMetricNumber(cached.impressionsChange),
@@ -204,3 +213,38 @@ export const scoreStory = (item, cached = {}) => {
 };
 
 export const formatScore = (score) => (score === null || score === undefined ? 'N/A' : score.toFixed(0));
+
+// Emoji celebrations for standout O/R, C/R and impressions. Each metric lists
+// tiers from lowest to highest; the highest tier a value reaches is shown.
+// Thresholds line up with the rubric's upper anchors.
+const CELEBRATIONS = {
+  openRate: [
+    { min: 20, emoji: '🎉', label: 'Great open rate (20%+)' },
+    { min: 25, emoji: '🏆', label: 'Top-tier open rate (25%+)' },
+  ],
+  clickRate: [
+    { min: 1.5, emoji: '🎉', label: 'Great click rate (1.5%+)' },
+    { min: 2.5, emoji: '🏆', label: 'Top-tier click rate (2.5%+)' },
+  ],
+  gscImpressions: [
+    { min: 10000, emoji: '📈', label: '10K+ impressions in 28 days' },
+    { min: 50000, emoji: '🚀', label: '50K+ impressions in 28 days' },
+  ],
+  impressions12mo: [
+    { min: 100000, emoji: '📈', label: '100K+ impressions in 12 months' },
+    { min: 500000, emoji: '🚀', label: '500K+ impressions in 12 months' },
+  ],
+};
+
+// Returns { emoji, label } for the highest tier reached, or null.
+export const getCelebration = (metricKey, value) => {
+  const tiers = CELEBRATIONS[metricKey];
+  if (!tiers || value === null || value === undefined) return null;
+  let hit = null;
+  for (const tier of tiers) {
+    if (value >= tier.min) hit = tier;
+  }
+  return hit;
+};
+
+export const CELEBRATION_LEGEND = Object.values(CELEBRATIONS).flat();

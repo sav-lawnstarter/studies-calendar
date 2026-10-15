@@ -22,10 +22,16 @@ import {
   getChangeClass,
   getChangeArrow,
 } from '../utils/googleAnalytics';
-import { scoreStory, formatScore, getSheetDA } from '../utils/storyScoring';
+import { scoreStory, formatScore, getSheetDA, getCelebration, parseMetricNumber } from '../utils/storyScoring';
 
 // Local storage key for comments
 const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
+
+// Emoji badge for standout values (see CELEBRATIONS in utils/storyScoring.js)
+const Celebrate = ({ metric, value }) => {
+  const hit = getCelebration(metric, value);
+  return hit ? <span className="ml-1" title={hit.label}>{hit.emoji}</span> : null;
+};
 
 // Placeholder for blank values
 const NA = <span className="text-gray-400">N/A</span>;
@@ -1001,8 +1007,11 @@ export default function StoryPitchAnalysis() {
           <span className="flex items-center gap-2">
             🔥 80+ links
           </span>
+          <span className="flex items-center gap-2" title="Hover an emoji in the table for details">
+            🎉 O/R 20%+ · C/R 1.5%+ &nbsp;🏆 O/R 25%+ · C/R 2.5%+ &nbsp;📈 Impr. 10K (28d) / 100K (12 mo) &nbsp;🚀 50K / 500K
+          </span>
           <span className="text-gray-500 ml-auto">
-            Score = weighted 0-100 across links, position, C/R, DA, O/R, Search Console and GA4 (28 days). Blank metrics are N/A and skipped.
+            Score = weighted 0-100 across links, position, C/R, DA, O/R, impressions, Search Console and GA4. Blank metrics are N/A and skipped.
             {metricsLoading && ' Loading Search Console and GA4…'}
           </span>
         </div>
@@ -1117,9 +1126,11 @@ export default function StoryPitchAnalysis() {
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.national_o_r || NA}
+                      <Celebrate metric="openRate" value={parseMetricNumber(row.national_o_r)} />
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.national_c_r || NA}
+                      <Celebrate metric="clickRate" value={parseMetricNumber(row.national_c_r)} />
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.date_pitched || row.pitch_date || NA}
@@ -1135,6 +1146,7 @@ export default function StoryPitchAnalysis() {
                       {metricsCache[row.id]?.impressions !== undefined ? (
                         <>
                           {formatNumber(metricsCache[row.id].impressions)}
+                          <Celebrate metric="gscImpressions" value={metricsCache[row.id].impressions} />
                           {metricsCache[row.id].lastYearImpressions !== undefined && (
                             <span
                               className="block text-[10px] leading-3 text-gray-400"
@@ -1159,7 +1171,10 @@ export default function StoryPitchAnalysis() {
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {metricsCache[row.id]?.impressions12mo !== undefined
-                        ? formatNumber(metricsCache[row.id].impressions12mo)
+                        ? <>
+                            {formatNumber(metricsCache[row.id].impressions12mo)}
+                            <Celebrate metric="impressions12mo" value={metricsCache[row.id].impressions12mo} />
+                          </>
                         : metricsLoading
                           ? <span className="text-gray-400 text-xs">Loading…</span>
                           : NA}
@@ -1243,7 +1258,10 @@ export default function StoryPitchAnalysis() {
                                 <span className="ml-2 text-[10px] uppercase text-gray-400">{b.group === 'gsc' ? 'Search Console' : 'GA4'}</span>
                               )}
                             </td>
-                            <td className="py-1 text-right">{b.display}</td>
+                            <td className="py-1 text-right">
+                              {b.display}
+                              <Celebrate metric={b.key} value={b.value} />
+                            </td>
                             <td className="py-1 text-right">{b.available ? Math.round(b.subScore) : 'N/A'}</td>
                             <td className="py-1 text-right">{b.weight}%</td>
                           </tr>
