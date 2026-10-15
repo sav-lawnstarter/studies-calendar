@@ -9,6 +9,7 @@ import {
 } from '../utils/googleSheets';
 import {
   batchFetchSearchConsoleMetrics,
+  fetchSearchConsoleMetrics,
   fetchSearchConsoleWithComparison,
   fetchGA4MetricsForUrl,
   fetchGA4ReaderInsightsForUrl,
@@ -30,7 +31,7 @@ const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
 const NA = <span className="text-gray-400">N/A</span>;
 
 // How long bulk-loaded Search Console / GA4 metrics stay fresh before the next page load refetches them
-const BULK_METRICS_KEY = 'story-metrics-bulk-fetched-at';
+const BULK_METRICS_KEY = 'story-metrics-bulk-fetched-at-v2';
 const BULK_METRICS_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 // Short labels for the Brand column (full name shows on hover)
@@ -251,6 +252,7 @@ export default function StoryPitchAnalysis() {
             avgPosition: gsc.current.position,
             clicks: gsc.current.clicks,
             impressions: gsc.current.impressions,
+            lastYearImpressions: gsc.lastYear.impressions,
             ctr: gsc.current.ctr,
             impressionsChange: gsc.comparison.impressionsChange,
           }),
@@ -287,11 +289,35 @@ export default function StoryPitchAnalysis() {
             avgPosition: m.position,
             clicks: m.clicks,
             impressions: m.impressions,
+            lastYearImpressions: m.lastYearImpressions,
             ctr: m.ctr,
             impressionsChange: m.impressionsChange,
           };
         }
       });
+
+      // Search Console, last 12 months: one request per story, a few at a time
+      // (Search Console only keeps ~16 months, so a year-over-year comparison isn't possible here)
+      const today = new Date();
+      const yearStart = new Date(today);
+      yearStart.setDate(yearStart.getDate() - 365);
+      const toISO = (d) => d.toISOString().split('T')[0];
+      const gscQueue = studies.filter(r => getPropertiesForBrand(r.brand).gscProperty);
+      const gscWorker = async () => {
+        while (gscQueue.length) {
+          const r = gscQueue.shift();
+          try {
+            const y = await fetchSearchConsoleMetrics(
+              token, getPropertiesForBrand(r.brand).gscProperty, r.study_url, toISO(yearStart), toISO(today)
+            );
+            if (y.impressions > 0) {
+              updates[r.id] = { ...updates[r.id], impressions12mo: y.impressions };
+            }
+          } catch (err) {
+            console.warn('GSC 12-month fetch error:', err);
+          }
+        }
+      };
 
       // GA4: one request per story, a few at a time
       const queue = studies.filter(r => getPropertiesForBrand(r.brand).ga4Property);
@@ -314,7 +340,10 @@ export default function StoryPitchAnalysis() {
           }
         }
       };
-      await Promise.all([worker(), worker(), worker(), worker()]);
+      await Promise.all([
+        worker(), worker(), worker(),
+        gscWorker(), gscWorker(), gscWorker(),
+      ]);
 
       const now = new Date().toISOString();
       setMetricsCache(prev => {
@@ -529,6 +558,14 @@ export default function StoryPitchAnalysis() {
         case 'avgPosition':
           aVal = metricsCache[a.id]?.avgPosition ?? Infinity;
           bVal = metricsCache[b.id]?.avgPosition ?? Infinity;
+          break;
+        case 'impressions':
+          aVal = metricsCache[a.id]?.impressions ?? -Infinity;
+          bVal = metricsCache[b.id]?.impressions ?? -Infinity;
+          break;
+        case 'impressions12mo':
+          aVal = metricsCache[a.id]?.impressions12mo ?? -Infinity;
+          bVal = metricsCache[b.id]?.impressions12mo ?? -Infinity;
           break;
         case 'impressionsChange':
           aVal = metricsCache[a.id]?.impressionsChange ?? -Infinity;
@@ -1002,7 +1039,9 @@ export default function StoryPitchAnalysis() {
                   <SortableHeader column="national_c_r" label="National<br/>C/R" />
                   <SortableHeader column="date_pitched" label="Date<br/>Pitched" />
                   <SortableHeader column="avgPosition" label="Avg<br/>Position" />
+                  <SortableHeader column="impressions" label="Impressions<br/>(28d)" />
                   <SortableHeader column="impressionsChange" label="Impr. %<br/>YoY" />
+                  <SortableHeader column="impressions12mo" label="Impressions<br/>(12 mo)" />
                 </tr>
               </thead>
               <tbody>
@@ -1092,6 +1131,23 @@ export default function StoryPitchAnalysis() {
                           ? <span className="text-gray-400 text-xs">Loading…</span>
                           : NA}
                     </td>
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
+                      {metricsCache[row.id]?.impressions !== undefined ? (
+                        <>
+                          {formatNumber(metricsCache[row.id].impressions)}
+                          {metricsCache[row.id].lastYearImpressions !== undefined && (
+                            <span
+                              className="block text-[10px] leading-3 text-gray-400"
+                              title="Impressions in the same 28-day window last year"
+                            >
+                              LY {formatNumber(metricsCache[row.id].lastYearImpressions)}
+                            </span>
+                          )}
+                        </>
+                      ) : metricsLoading
+                        ? <span className="text-gray-400 text-xs">Loading…</span>
+                        : NA}
+                    </td>
                     <td className="px-3 py-3 text-sm border-b text-center">
                       {metricsCache[row.id]?.impressionsChange !== null && metricsCache[row.id]?.impressionsChange !== undefined ? (
                         <span className={getChangeClass(metricsCache[row.id].impressionsChange)}>
@@ -1100,6 +1156,13 @@ export default function StoryPitchAnalysis() {
                       ) : metricsLoading ? (
                         <span className="text-gray-400 text-xs">Loading…</span>
                       ) : NA}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
+                      {metricsCache[row.id]?.impressions12mo !== undefined
+                        ? formatNumber(metricsCache[row.id].impressions12mo)
+                        : metricsLoading
+                          ? <span className="text-gray-400 text-xs">Loading…</span>
+                          : NA}
                     </td>
                   </tr>
                 ))}
