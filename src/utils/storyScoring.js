@@ -214,37 +214,23 @@ export const scoreStory = (item, cached = {}) => {
 
 export const formatScore = (score) => (score === null || score === undefined ? 'N/A' : score.toFixed(0));
 
-// Emoji celebrations for standout O/R, C/R and impressions. Each metric lists
-// tiers from lowest to highest; the highest tier a value reaches is shown.
-// Thresholds line up with the rubric's upper anchors.
-const CELEBRATIONS = {
-  openRate: [
-    { min: 20, emoji: '🎉', label: 'Great open rate (20%+)' },
-    { min: 25, emoji: '🏆', label: 'Top-tier open rate (25%+)' },
-  ],
-  clickRate: [
-    { min: 1.5, emoji: '🎉', label: 'Great click rate (1.5%+)' },
-    { min: 2.5, emoji: '🏆', label: 'Top-tier click rate (2.5%+)' },
-  ],
-  gscImpressions: [
-    { min: 10000, emoji: '📈', label: '10K+ impressions in 28 days' },
-    { min: 50000, emoji: '🚀', label: '50K+ impressions in 28 days' },
-  ],
-  impressions12mo: [
-    { min: 100000, emoji: '📈', label: '100K+ impressions in 12 months' },
-    { min: 500000, emoji: '🚀', label: '500K+ impressions in 12 months' },
-  ],
-};
+// Awards shown next to a story's title. Each metric has its own emoji so the
+// legend and the table line up. Thresholds match the rubric's upper anchors.
+export const AWARDS = [
+  { key: 'links', emoji: '🔥', legend: '80+ links', label: '80+ links', earned: (v) => v.links >= 80 },
+  { key: 'openRate', emoji: '📬', legend: 'O/R 20%+', label: 'Open rate 20%+', earned: (v) => v.openRate >= 20 },
+  { key: 'clickRate', emoji: '🎯', legend: 'C/R 1.5%+', label: 'Click rate 1.5%+', earned: (v) => v.clickRate >= 1.5 },
+  {
+    key: 'impressions',
+    emoji: '🚀',
+    legend: 'Impressions 10K+ (28d) or 100K+ (12 mo)',
+    label: 'High impressions (10K+ in 28 days or 100K+ in 12 months)',
+    earned: (v) => v.gscImpressions >= 10000 || v.impressions12mo >= 100000,
+  },
+];
 
-// Returns { emoji, label } for the highest tier reached, or null.
-export const getCelebration = (metricKey, value) => {
-  const tiers = CELEBRATIONS[metricKey];
-  if (!tiers || value === null || value === undefined) return null;
-  let hit = null;
-  for (const tier of tiers) {
-    if (value >= tier.min) hit = tier;
-  }
-  return hit;
+// Awards a story has earned. Blank (null) metrics never earn an award.
+export const getAwards = (item, cached = {}) => {
+  const values = collectStoryValues(item, cached);
+  return AWARDS.filter(award => award.earned(values));
 };
-
-export const CELEBRATION_LEGEND = Object.values(CELEBRATIONS).flat();
