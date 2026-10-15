@@ -23,9 +23,13 @@ import {
   getChangeArrow,
 } from '../utils/googleAnalytics';
 import { scoreStory, formatScore, getSheetDA, getAwards, AWARDS } from '../utils/storyScoring';
+import { getFiscalPeriod, listPeriods, filterByPeriod, yearLabel, quarterLabel } from '../utils/fiscalPeriods';
 
 // Local storage key for comments
 const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
+
+// Pitch date for a sheet row (used for fiscal year / quarter grouping)
+const getPitchDate = (item) => item.date_pitched || item.pitch_date;
 
 // Placeholder for blank values
 const NA = <span className="text-gray-400">N/A</span>;
@@ -92,6 +96,10 @@ export default function StoryPitchAnalysis() {
 
   // Report modal state
   const [showReportModal, setShowReportModal] = useState(false);
+
+  // Period view: all time, a fiscal year, or a fiscal quarter (see utils/fiscalPeriods.js)
+  const [viewMode, setViewMode] = useState('all');
+  const [selectedPeriodKey, setSelectedPeriodKey] = useState(null);
 
   // Sorting state
   const [sortColumn, setSortColumn] = useState('rank');
@@ -267,6 +275,25 @@ export default function StoryPitchAnalysis() {
     }
   }, [selectedStory, storyMetrics]);
 
+  // Stories in the selected period; ranking, summary cards and reports all use this
+  const periodOptions = useMemo(
+    () => (viewMode === 'all' ? [] : listPeriods(data, viewMode, getPitchDate)),
+    [data, viewMode]
+  );
+  const activePeriodKey = periodOptions.some(p => p.key === selectedPeriodKey)
+    ? selectedPeriodKey
+    : periodOptions[0]?.key ?? null;
+  const activePeriod = periodOptions.find(p => p.key === activePeriodKey);
+  const periodLabel = viewMode === 'all' ? 'All time' : (activePeriod?.label ?? 'No dated stories');
+  const periodData = useMemo(
+    () => (viewMode === 'all' ? data : filterByPeriod(data, viewMode, activePeriodKey, getPitchDate)),
+    [data, viewMode, activePeriodKey]
+  );
+  const undatedCount = useMemo(
+    () => data.filter(item => !getFiscalPeriod(getPitchDate(item))).length,
+    [data]
+  );
+
   // Load Search Console + GA4 metrics for every story so they can feed the score
   const loadBulkMetrics = useCallback(async (token, rows) => {
     const studies = rows.filter(r => r.study_url);
@@ -375,38 +402,38 @@ export default function StoryPitchAnalysis() {
 
   // Calculate metrics from data
   const calculateMetrics = useCallback(() => {
-    if (!data.length) return { totalStories: 0, totalLinks: 0 };
+    if (!periodData.length) return { totalStories: 0, totalLinks: 0 };
 
     // Sum links using Study Link # column
     let totalLinks = 0;
 
-    data.forEach(item => {
+    periodData.forEach(item => {
       // Use Study Link # column for link count
       totalLinks += parseNumberWithCommas(item['study_link_']);
     });
 
-    const daValues = data.map(getSheetDA).filter(v => v !== null);
+    const daValues = periodData.map(getSheetDA).filter(v => v !== null);
     const avgDA = daValues.length
       ? Math.round((daValues.reduce((sum, v) => sum + v, 0) / daValues.length) * 10) / 10
       : null;
 
     return {
-      totalStories: data.length,
+      totalStories: periodData.length,
       totalLinks,
       avgDA,
       linksAbove50: null,
       linksAbove80: null,
     };
-  }, [data]);
+  }, [periodData]);
 
   const metrics = calculateMetrics();
 
   // Calculate performance score and rank for each story
   const rankedData = useMemo(() => {
-    if (!data.length) return [];
+    if (!periodData.length) return [];
 
     // Calculate performance score for each story (see utils/storyScoring.js for the rubric)
-    const storiesWithScores = data.map(item => {
+    const storiesWithScores = periodData.map(item => {
       // Parse year-based link counts for display (handle commas in numbers)
       const links2025 = parseNumberWithCommas(item['2025_link_']);
       const links2024 = parseNumberWithCommas(item['2024_link_']);
@@ -450,7 +477,7 @@ export default function StoryPitchAnalysis() {
       ...item,
       rank: rankMap.get(item.id),
     }));
-  }, [data, metricsCache]);
+  }, [periodData, metricsCache]);
 
   // Get row color based on performance
   const getRowColor = useCallback((story) => {
@@ -614,6 +641,47 @@ export default function StoryPitchAnalysis() {
     </th>
   );
 
+  // Per-year and per-quarter rollups across ALL stories (independent of the current view)
+  const periodSummaries = useMemo(() => {
+    const build = (mode) => {
+      const groups = new Map();
+      data.forEach(item => {
+        const period = getFiscalPeriod(getPitchDate(item));
+        if (!period) return;
+        const key = mode === 'year' ? period.yearKey : period.quarterKey;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            label: mode === 'year' ? yearLabel(period) : quarterLabel(period),
+            sort: period.startYear * 10 + (mode === 'year' ? 0 : period.quarter),
+            stories: [],
+          });
+        }
+        const { score } = scoreStory(item, metricsCache[item.id]);
+        groups.get(key).stories.push({
+          title: item.study_title || 'Untitled',
+          links: parseNumberWithCommas(item['study_link_']),
+          score,
+        });
+      });
+      return [...groups.values()]
+        .sort((a, b) => b.sort - a.sort)
+        .map(g => {
+          const scored = g.stories.filter(st => st.score !== null);
+          const best = [...scored].sort((a, b) => b.score - a.score)[0];
+          return {
+            label: g.label,
+            storyCount: g.stories.length,
+            totalLinks: g.stories.reduce((sum, st) => sum + st.links, 0),
+            avgScore: scored.length ? scored.reduce((sum, st) => sum + st.score, 0) / scored.length : null,
+            bestTitle: best?.title ?? null,
+            bestScore: best?.score ?? null,
+          };
+        });
+    };
+    return { yearly: build('year'), quarterly: build('quarter') };
+  }, [data, metricsCache]);
+
   // Generate report content
   const generateReport = useCallback(() => {
     const sortedByPerformance = [...rankedData].sort((a, b) => (b.performanceScore ?? -1) - (a.performanceScore ?? -1));
@@ -626,6 +694,9 @@ export default function StoryPitchAnalysis() {
 
     return {
       title: 'Story & Pitch Analysis Report',
+      periodLabel,
+      viewMode,
+      periodSummaries,
       generatedAt: new Date().toLocaleString(),
       summary: {
         totalStories: rankedData.length,
@@ -637,11 +708,30 @@ export default function StoryPitchAnalysis() {
       worstPerformers,
       allStories: sortedByPerformance,
     };
-  }, [rankedData]);
+  }, [rankedData, periodLabel, viewMode, periodSummaries]);
 
   // Export report as PDF (using browser print)
   const exportReportAsPDF = useCallback(() => {
     const report = generateReport();
+
+    // Rollup table: one row per year or quarter across all stories
+    const escapeHtml = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const summaryTable = (rows) => rows.length === 0
+      ? '<p>No stories with a pitch date.</p>'
+      : `<table>
+          <thead><tr><th>Period</th><th>Stories</th><th>Total Links</th><th>Avg Score</th><th>Top Story</th></tr></thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${r.label}</td>
+                <td>${r.storyCount}</td>
+                <td>${r.totalLinks}</td>
+                <td>${r.avgScore === null ? 'N/A' : r.avgScore.toFixed(0)}</td>
+                <td>${r.bestTitle ? `${escapeHtml(r.bestTitle)} (${r.bestScore.toFixed(0)})` : 'N/A'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
@@ -670,6 +760,7 @@ export default function StoryPitchAnalysis() {
       <body>
         <h1>${report.title}</h1>
         <p>Generated: ${report.generatedAt}</p>
+        <p><strong>Period:</strong> ${report.periodLabel}${report.viewMode === 'all' ? '' : ` (${report.viewMode === 'year' ? 'yearly' : 'quarterly'} view)`}</p>
 
         <h2>Summary</h2>
         <div class="summary-grid">
@@ -690,6 +781,9 @@ export default function StoryPitchAnalysis() {
             <div class="label">Stories with 80+ Links</div>
           </div>
         </div>
+
+        <h2>Performance by ${report.viewMode === 'quarter' ? 'Quarter' : 'Year'}</h2>
+        ${summaryTable(report.viewMode === 'quarter' ? report.periodSummaries.quarterly : report.periodSummaries.yearly)}
 
         <h2 class="best">Best Performers</h2>
         <table>
@@ -759,7 +853,7 @@ export default function StoryPitchAnalysis() {
   const exportReportAsCSV = useCallback(() => {
     const report = generateReport();
 
-    const headers = ['Rank', 'Story Title', 'Brand', 'Links', 'Performance Score', 'Date Pitched', 'Comment'];
+    const headers = ['Rank', 'Story Title', 'Brand', 'Links', 'Performance Score', 'Date Pitched', 'Quarter', 'Comment'];
     const rows = report.allStories.map(s => [
       s.rank,
       `"${(s.study_title || '').replace(/"/g, '""')}"`,
@@ -767,6 +861,7 @@ export default function StoryPitchAnalysis() {
       s.linkCount,
       formatScore(s.performanceScore),
       s.date_pitched || s.pitch_date || '',
+      getFiscalPeriod(getPitchDate(s))?.quarterShort || '',
       `"${(comments[s.id] || '').replace(/"/g, '""')}"`,
     ]);
 
@@ -774,7 +869,7 @@ export default function StoryPitchAnalysis() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `story-pitch-report-${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `story-pitch-report-${report.viewMode === 'all' ? 'all-time' : report.periodLabel.split(' (')[0].replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   }, [generateReport, comments]);
 
@@ -985,6 +1080,45 @@ export default function StoryPitchAnalysis() {
         </div>
       )}
 
+      {/* Period view: all time / fiscal year / fiscal quarter */}
+      {data.length > 0 && (
+        <div className="px-6 py-3 bg-gray-50 border-b flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+          <span className="font-medium text-gray-700">View:</span>
+          <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden bg-white">
+            {[['all', 'All time'], ['year', 'Yearly'], ['quarter', 'Quarterly']].map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`px-3 py-1.5 transition-colors ${viewMode === mode ? 'bg-ls-green text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {viewMode !== 'all' && (
+            <select
+              value={activePeriodKey ?? ''}
+              onChange={e => setSelectedPeriodKey(e.target.value)}
+              disabled={periodOptions.length === 0}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700"
+            >
+              {periodOptions.map(p => (
+                <option key={p.key} value={p.key}>{p.label}</option>
+              ))}
+            </select>
+          )}
+          <span className="text-gray-500">
+            {viewMode === 'all'
+              ? `Ranking all ${periodData.length} stories`
+              : `Ranking ${periodData.length} ${periodData.length === 1 ? 'story' : 'stories'} pitched in ${periodLabel}`}
+            {viewMode !== 'all' && undatedCount > 0 && ` · ${undatedCount} without a pitch date not shown`}
+          </span>
+          <span className="text-xs text-gray-400 ml-auto">
+            LS quarters: Q1 Mar–May · Q2 Jun–Aug · Q3 Sep–Nov · Q4 Dec–Feb
+          </span>
+        </div>
+      )}
+
       {/* Performance Legend */}
       {rankedData.length > 0 && (
         <div className="px-6 py-3 bg-white border-b text-sm space-y-2">
@@ -1027,7 +1161,11 @@ export default function StoryPitchAnalysis() {
           </div>
         ) : rankedData.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
-            <p>No data available. Click "Refresh Data" to load.</p>
+            <p>
+              {data.length > 0
+                ? `No stories were pitched in ${periodLabel}.`
+                : 'No data available. Click "Refresh Data" to load.'}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1570,9 +1708,13 @@ export default function StoryPitchAnalysis() {
               </button>
             </div>
             <div className="p-6">
-              <p className="text-gray-600 mb-6">
+              <p className="text-gray-600 mb-2">
                 Generate a comprehensive performance report including all stories pitched, total links,
                 best and worst performers, and detailed rankings.
+              </p>
+              <p className="text-sm mb-6 px-3 py-2 bg-purple-50 text-purple-800 rounded-lg">
+                Reporting on: <strong>{periodLabel}</strong>
+                {viewMode === 'all' ? '' : ' (change this with the View selector above the table)'}
               </p>
 
               <div className="space-y-3">
@@ -1607,6 +1749,8 @@ export default function StoryPitchAnalysis() {
                   <li>• Total stories pitched: {rankedData.length}</li>
                   <li>• Total links: {rankedData.reduce((sum, item) => sum + item.linkCount, 0)}</li>
                   <li>• Stories with 80+ links: {rankedData.filter(s => s.hasHighLinks).length}</li>
+                  <li>• Rankings within {periodLabel === 'All time' ? 'all stories' : periodLabel}</li>
+                  <li>• Rollup of every {viewMode === 'quarter' ? 'quarter' : 'year'} for comparison</li>
                   <li>• Best and worst performers</li>
                   <li>• Performance rankings for all stories</li>
                 </ul>
