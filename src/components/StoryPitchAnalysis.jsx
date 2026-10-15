@@ -251,6 +251,7 @@ export default function StoryPitchAnalysis() {
             avgPosition: gsc.current.position,
             clicks: gsc.current.clicks,
             impressions: gsc.current.impressions,
+            lastYearImpressions: gsc.lastYear.impressions,
             ctr: gsc.current.ctr,
             impressionsChange: gsc.comparison.impressionsChange,
           }),
@@ -287,6 +288,7 @@ export default function StoryPitchAnalysis() {
             avgPosition: m.position,
             clicks: m.clicks,
             impressions: m.impressions,
+            lastYearImpressions: m.lastYearImpressions,
             ctr: m.ctr,
             impressionsChange: m.impressionsChange,
           };
@@ -529,6 +531,10 @@ export default function StoryPitchAnalysis() {
         case 'avgPosition':
           aVal = metricsCache[a.id]?.avgPosition ?? Infinity;
           bVal = metricsCache[b.id]?.avgPosition ?? Infinity;
+          break;
+        case 'impressions':
+          aVal = metricsCache[a.id]?.impressions ?? -Infinity;
+          bVal = metricsCache[b.id]?.impressions ?? -Infinity;
           break;
         case 'impressionsChange':
           aVal = metricsCache[a.id]?.impressionsChange ?? -Infinity;
@@ -1002,6 +1008,7 @@ export default function StoryPitchAnalysis() {
                   <SortableHeader column="national_c_r" label="National<br/>C/R" />
                   <SortableHeader column="date_pitched" label="Date<br/>Pitched" />
                   <SortableHeader column="avgPosition" label="Avg<br/>Position" />
+                  <SortableHeader column="impressions" label="Impressions<br/>(28d)" />
                   <SortableHeader column="impressionsChange" label="Impr. %<br/>YoY" />
                 </tr>
               </thead>
@@ -1091,6 +1098,23 @@ export default function StoryPitchAnalysis() {
                         : metricsLoading
                           ? <span className="text-gray-400 text-xs">Loading…</span>
                           : NA}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
+                      {metricsCache[row.id]?.impressions !== undefined ? (
+                        <>
+                          {formatNumber(metricsCache[row.id].impressions)}
+                          {metricsCache[row.id].lastYearImpressions !== undefined && (
+                            <span
+                              className="block text-[10px] leading-3 text-gray-400"
+                              title="Impressions in the same 28-day window last year"
+                            >
+                              LY {formatNumber(metricsCache[row.id].lastYearImpressions)}
+                            </span>
+                          )}
+                        </>
+                      ) : metricsLoading
+                        ? <span className="text-gray-400 text-xs">Loading…</span>
+                        : NA}
                     </td>
                     <td className="px-3 py-3 text-sm border-b text-center">
                       {metricsCache[row.id]?.impressionsChange !== null && metricsCache[row.id]?.impressionsChange !== undefined ? (
