@@ -22,16 +22,10 @@ import {
   getChangeClass,
   getChangeArrow,
 } from '../utils/googleAnalytics';
-import { scoreStory, formatScore, getSheetDA, getCelebration, parseMetricNumber } from '../utils/storyScoring';
+import { scoreStory, formatScore, getSheetDA, getAwards, AWARDS } from '../utils/storyScoring';
 
 // Local storage key for comments
 const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
-
-// Emoji badge for standout values (see CELEBRATIONS in utils/storyScoring.js)
-const Celebrate = ({ metric, value }) => {
-  const hit = getCelebration(metric, value);
-  return hit ? <span className="ml-1" title={hit.label}>{hit.emoji}</span> : null;
-};
 
 // Placeholder for blank values
 const NA = <span className="text-gray-400">N/A</span>;
@@ -437,6 +431,7 @@ export default function StoryPitchAnalysis() {
         avgDA: getSheetDA(item),
         performanceScore: scoreDetail.score,
         scoreDetail,
+        awards: getAwards(item, metricsCache[item.id]),
         hasHighLinks: linkCount >= 80,
       };
     });
@@ -477,13 +472,15 @@ export default function StoryPitchAnalysis() {
   }, [rankedData]);
 
   // Get visual indicators for a story
-  const getVisualIndicators = useCallback((story) => {
-    let indicators = '';
-    if (story.hasHighLinks) {
-      indicators += '🔥 '; // 80+ links
-    }
-    return indicators;
-  }, []);
+  const getVisualIndicators = useCallback((story) => (
+    story.awards?.length > 0 && (
+      <>
+        {story.awards.map(award => (
+          <span key={award.key} title={award.label}>{award.emoji}</span>
+        ))}{' '}
+      </>
+    )
+  ), []);
 
   // Handle column sort
   const handleSort = useCallback((column) => {
@@ -990,30 +987,35 @@ export default function StoryPitchAnalysis() {
 
       {/* Performance Legend */}
       {rankedData.length > 0 && (
-        <div className="px-6 py-3 bg-white border-b flex items-center gap-6 text-sm">
-          <span className="font-medium text-gray-700">Legend:</span>
-          <span className="flex items-center gap-2">
-            <span className="w-4 h-4 bg-green-50 border border-green-200 rounded"></span>
-            Top performing
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-4 h-4 bg-yellow-50 border border-yellow-200 rounded"></span>
-            Middle performing
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-4 h-4 bg-red-50 border border-red-200 rounded"></span>
-            Needs improvement
-          </span>
-          <span className="flex items-center gap-2">
-            🔥 80+ links
-          </span>
-          <span className="flex items-center gap-2" title="Hover an emoji in the table for details">
-            🎉 O/R 20%+ · C/R 1.5%+ &nbsp;🏆 O/R 25%+ · C/R 2.5%+ &nbsp;📈 Impr. 10K (28d) / 100K (12 mo) &nbsp;🚀 50K / 500K
-          </span>
-          <span className="text-gray-500 ml-auto">
+        <div className="px-6 py-3 bg-white border-b text-sm space-y-2">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+            <span className="w-24 font-medium text-gray-700">Row color:</span>
+            <span className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-green-50 border border-green-200 rounded"></span>
+              Top performing
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-yellow-50 border border-yellow-200 rounded"></span>
+              Middle performing
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-red-50 border border-red-200 rounded"></span>
+              Needs improvement
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+            <span className="w-24 font-medium text-gray-700">Title awards:</span>
+            {AWARDS.map(award => (
+              <span key={award.key} className="flex items-center gap-2">
+                <span className="text-base leading-none">{award.emoji}</span>
+                {award.legend}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">
             Score = weighted 0-100 across links, position, C/R, DA, O/R, impressions, Search Console and GA4. Blank metrics are N/A and skipped.
             {metricsLoading && ' Loading Search Console and GA4…'}
-          </span>
+          </p>
         </div>
       )}
 
@@ -1126,11 +1128,9 @@ export default function StoryPitchAnalysis() {
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.national_o_r || NA}
-                      <Celebrate metric="openRate" value={parseMetricNumber(row.national_o_r)} />
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.national_c_r || NA}
-                      <Celebrate metric="clickRate" value={parseMetricNumber(row.national_c_r)} />
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
                       {row.date_pitched || row.pitch_date || NA}
@@ -1146,7 +1146,6 @@ export default function StoryPitchAnalysis() {
                       {metricsCache[row.id]?.impressions !== undefined ? (
                         <>
                           {formatNumber(metricsCache[row.id].impressions)}
-                          <Celebrate metric="gscImpressions" value={metricsCache[row.id].impressions} />
                           {metricsCache[row.id].lastYearImpressions !== undefined && (
                             <span
                               className="block text-[10px] leading-3 text-gray-400"
@@ -1173,7 +1172,6 @@ export default function StoryPitchAnalysis() {
                       {metricsCache[row.id]?.impressions12mo !== undefined
                         ? <>
                             {formatNumber(metricsCache[row.id].impressions12mo)}
-                            <Celebrate metric="impressions12mo" value={metricsCache[row.id].impressions12mo} />
                           </>
                         : metricsLoading
                           ? <span className="text-gray-400 text-xs">Loading…</span>
@@ -1211,7 +1209,10 @@ export default function StoryPitchAnalysis() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Study Title</label>
-                <p className="text-gray-900 font-medium">{selectedStory.study_title || 'N/A'}</p>
+                <p className="text-gray-900 font-medium">
+                  {getVisualIndicators(rankedData.find(r => r.id === selectedStory.id) || selectedStory)}
+                  {selectedStory.study_title || 'N/A'}
+                </p>
               </div>
 
               <div>
@@ -1260,7 +1261,6 @@ export default function StoryPitchAnalysis() {
                             </td>
                             <td className="py-1 text-right">
                               {b.display}
-                              <Celebrate metric={b.key} value={b.value} />
                             </td>
                             <td className="py-1 text-right">{b.available ? Math.round(b.subScore) : 'N/A'}</td>
                             <td className="py-1 text-right">{b.weight}%</td>
