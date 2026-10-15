@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, LogIn, LogOut, ExternalLink, AlertCircle, TrendingUp, Link2, X, MousePointerClick, Eye, Target, BarChart3, Clock, ArrowDownToLine, Users, Settings, ChevronDown, ChevronUp, FileText, Download, MessageSquare, Award, ArrowUpDown, MapPin, Share2 } from 'lucide-react';
 import {
   loadGoogleScript,
@@ -8,6 +8,7 @@ import {
   clearGoogleAuth,
 } from '../utils/googleSheets';
 import {
+  batchFetchSearchConsoleMetrics,
   fetchSearchConsoleWithComparison,
   fetchGA4MetricsForUrl,
   fetchGA4ReaderInsightsForUrl,
@@ -20,9 +21,17 @@ import {
   getChangeClass,
   getChangeArrow,
 } from '../utils/googleAnalytics';
+import { scoreStory, formatScore, getSheetDA } from '../utils/storyScoring';
 
 // Local storage key for comments
 const COMMENTS_STORAGE_KEY = 'story-pitch-comments';
+
+// Placeholder for blank values
+const NA = <span className="text-gray-400">N/A</span>;
+
+// How long bulk-loaded Search Console / GA4 metrics stay fresh before the next page load refetches them
+const BULK_METRICS_KEY = 'story-metrics-bulk-fetched-at';
+const BULK_METRICS_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 // Short labels for the Brand column (full name shows on hover)
 const BRAND_ABBREVIATIONS = {
@@ -65,6 +74,10 @@ export default function StoryPitchAnalysis() {
       return {};
     }
   });
+
+  // True while Search Console / GA4 metrics are bulk-loading for the table
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const forceMetricsRefresh = useRef(false);
 
   // Comments state
   const [comments, setComments] = useState(() => {
@@ -152,6 +165,7 @@ export default function StoryPitchAnalysis() {
   const handleRefresh = async () => {
     const token = getStoredToken();
     if (token) {
+      forceMetricsRefresh.current = true;
       await fetchData(token);
     } else {
       setIsAuthenticated(false);
@@ -227,17 +241,108 @@ export default function StoryPitchAnalysis() {
 
   // Cache metrics when they're loaded
   useEffect(() => {
-    if (selectedStory && storyMetrics?.gsc) {
+    if (selectedStory && (storyMetrics?.gsc || storyMetrics?.ga4)) {
+      const { gsc, ga4 } = storyMetrics;
       setMetricsCache(prev => ({
         ...prev,
         [selectedStory.id]: {
-          avgPosition: storyMetrics.gsc.current.position,
-          impressionsChange: storyMetrics.gsc.comparison.impressionsChange,
+          ...prev[selectedStory.id],
+          ...(gsc && {
+            avgPosition: gsc.current.position,
+            clicks: gsc.current.clicks,
+            impressions: gsc.current.impressions,
+            ctr: gsc.current.ctr,
+            impressionsChange: gsc.comparison.impressionsChange,
+          }),
+          ...(ga4 && ga4.pageViews > 0 && {
+            pageViews: ga4.pageViews,
+            avgEngagementTime: ga4.avgEngagementTime,
+            scrollDepth: ga4.scrollDepth,
+          }),
           lastUpdated: new Date().toISOString(),
         },
       }));
     }
   }, [selectedStory, storyMetrics]);
+
+  // Load Search Console + GA4 metrics for every story so they can feed the score
+  const loadBulkMetrics = useCallback(async (token, rows) => {
+    const studies = rows.filter(r => r.study_url);
+    if (!studies.length) return;
+
+    setMetricsLoading(true);
+    try {
+      const updates = {};
+
+      // Search Console: one batched request per brand property
+      const gsc = await batchFetchSearchConsoleMetrics(
+        token,
+        studies.map(r => ({ url: r.study_url, brand: r.brand }))
+      );
+      studies.forEach(r => {
+        const m = gsc[r.study_url];
+        if (m) {
+          updates[r.id] = {
+            ...updates[r.id],
+            avgPosition: m.position,
+            clicks: m.clicks,
+            impressions: m.impressions,
+            ctr: m.ctr,
+            impressionsChange: m.impressionsChange,
+          };
+        }
+      });
+
+      // GA4: one request per story, a few at a time
+      const queue = studies.filter(r => getPropertiesForBrand(r.brand).ga4Property);
+      const worker = async () => {
+        while (queue.length) {
+          const r = queue.shift();
+          try {
+            const g = await fetchGA4MetricsForUrl(token, getPropertiesForBrand(r.brand).ga4Property, r.study_url);
+            // GA4 returns zeros when the page has no rows; treat that as no data
+            if (g.pageViews > 0) {
+              updates[r.id] = {
+                ...updates[r.id],
+                pageViews: g.pageViews,
+                avgEngagementTime: g.avgEngagementTime,
+                scrollDepth: g.scrollDepth,
+              };
+            }
+          } catch (err) {
+            console.warn('GA4 bulk fetch error:', err);
+          }
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+
+      const now = new Date().toISOString();
+      setMetricsCache(prev => {
+        const next = { ...prev };
+        Object.entries(updates).forEach(([id, values]) => {
+          next[id] = { ...prev[id], ...values, lastUpdated: now };
+        });
+        return next;
+      });
+      localStorage.setItem(BULK_METRICS_KEY, String(Date.now()));
+    } catch (err) {
+      console.error('Bulk metrics fetch error:', err);
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, []);
+
+  // Bulk-load metrics after the sheet loads (if stale, or when Refresh Data was clicked)
+  useEffect(() => {
+    if (!data.length) return;
+    const token = getStoredToken();
+    if (!token) return;
+    const age = Date.now() - Number(localStorage.getItem(BULK_METRICS_KEY) || 0);
+    if (forceMetricsRefresh.current || age > BULK_METRICS_MAX_AGE_MS) {
+      forceMetricsRefresh.current = false;
+      loadBulkMetrics(token, data);
+    }
+  }, [data, loadBulkMetrics]);
 
   // Calculate metrics from data
   const calculateMetrics = useCallback(() => {
@@ -251,11 +356,15 @@ export default function StoryPitchAnalysis() {
       totalLinks += parseNumberWithCommas(item['study_link_']);
     });
 
+    const daValues = data.map(getSheetDA).filter(v => v !== null);
+    const avgDA = daValues.length
+      ? Math.round((daValues.reduce((sum, v) => sum + v, 0) / daValues.length) * 10) / 10
+      : null;
+
     return {
       totalStories: data.length,
       totalLinks,
-      // DA metrics will be added when external service is connected
-      avgDA: null,
+      avgDA,
       linksAbove50: null,
       linksAbove80: null,
     };
@@ -267,8 +376,7 @@ export default function StoryPitchAnalysis() {
   const rankedData = useMemo(() => {
     if (!data.length) return [];
 
-    // Calculate performance score for each story
-    // Score based on link count (DA will be added when external service is connected)
+    // Calculate performance score for each story (see utils/storyScoring.js for the rubric)
     const storiesWithScores = data.map(item => {
       // Parse year-based link counts for display (handle commas in numbers)
       const links2025 = parseNumberWithCommas(item['2025_link_']);
@@ -280,8 +388,8 @@ export default function StoryPitchAnalysis() {
       // Use Study Link # column for total link count
       const linkCount = parseNumberWithCommas(item['study_link_']);
 
-      // Performance score: based on link count only (DA from external service not yet connected)
-      const performanceScore = linkCount;
+      // Weighted 0-100 score; null when no metric has data
+      const scoreDetail = scoreStory(item, metricsCache[item.id]);
 
       return {
         ...item,
@@ -291,14 +399,15 @@ export default function StoryPitchAnalysis() {
         links2022,
         links2021,
         linkCount,
-        avgDA: null, // Will be populated when external DA service is connected
-        performanceScore,
+        avgDA: getSheetDA(item),
+        performanceScore: scoreDetail.score,
+        scoreDetail,
         hasHighLinks: linkCount >= 80,
       };
     });
 
-    // Sort by performance score and assign ranks
-    const sorted = [...storiesWithScores].sort((a, b) => b.performanceScore - a.performanceScore);
+    // Sort by performance score (unscored stories last) and assign ranks
+    const sorted = [...storiesWithScores].sort((a, b) => (b.performanceScore ?? -1) - (a.performanceScore ?? -1));
     sorted.forEach((item, index) => {
       item.rank = index + 1;
     });
@@ -311,11 +420,13 @@ export default function StoryPitchAnalysis() {
       ...item,
       rank: rankMap.get(item.id),
     }));
-  }, [data]);
+  }, [data, metricsCache]);
 
   // Get row color based on performance
   const getRowColor = useCallback((story) => {
-    const totalStories = rankedData.length;
+    // Stories with no data at all stay uncolored
+    if (story.performanceScore === null) return '';
+    const totalStories = rankedData.filter(s => s.performanceScore !== null).length;
     if (totalStories === 0) return '';
 
     const topThird = Math.ceil(totalStories / 3);
@@ -396,8 +507,12 @@ export default function StoryPitchAnalysis() {
           bVal = b.linkCount || 0;
           break;
         case 'avgDA':
-          aVal = a.avgDA || 0;
-          bVal = b.avgDA || 0;
+          aVal = a.avgDA ?? -1;
+          bVal = b.avgDA ?? -1;
+          break;
+        case 'score':
+          aVal = a.performanceScore ?? -1;
+          bVal = b.performanceScore ?? -1;
           break;
         case 'national_o_r':
           aVal = parseFloat((a.national_o_r || '0').replace('%', '')) || 0;
@@ -461,9 +576,10 @@ export default function StoryPitchAnalysis() {
 
   // Generate report content
   const generateReport = useCallback(() => {
-    const sortedByPerformance = [...rankedData].sort((a, b) => b.performanceScore - a.performanceScore);
-    const bestPerformers = sortedByPerformance.slice(0, 5);
-    const worstPerformers = sortedByPerformance.slice(-5).reverse();
+    const sortedByPerformance = [...rankedData].sort((a, b) => (b.performanceScore ?? -1) - (a.performanceScore ?? -1));
+    const scoredStories = sortedByPerformance.filter(s => s.performanceScore !== null);
+    const bestPerformers = scoredStories.slice(0, 5);
+    const worstPerformers = scoredStories.slice(-5).reverse();
 
     const totalLinks = rankedData.reduce((sum, item) => sum + item.linkCount, 0);
     const avgLinksPerStory = rankedData.length > 0 ? (totalLinks / rankedData.length).toFixed(1) : 0;
@@ -547,7 +663,7 @@ export default function StoryPitchAnalysis() {
                 <td>${s.study_title || '-'}</td>
                 <td>${s.brand || '-'}</td>
                 <td>${s.linkCount}</td>
-                <td>${s.performanceScore.toFixed(1)}</td>
+                <td>${formatScore(s.performanceScore)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -565,7 +681,7 @@ export default function StoryPitchAnalysis() {
                 <td>${s.study_title || '-'}</td>
                 <td>${s.brand || '-'}</td>
                 <td>${s.linkCount}</td>
-                <td>${s.performanceScore.toFixed(1)}</td>
+                <td>${formatScore(s.performanceScore)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -583,7 +699,7 @@ export default function StoryPitchAnalysis() {
                 <td>${s.study_title || '-'}</td>
                 <td>${s.brand || '-'}</td>
                 <td>${s.linkCount}</td>
-                <td>${s.performanceScore.toFixed(1)}</td>
+                <td>${formatScore(s.performanceScore)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -609,7 +725,7 @@ export default function StoryPitchAnalysis() {
       `"${(s.study_title || '').replace(/"/g, '""')}"`,
       s.brand || '',
       s.linkCount,
-      s.performanceScore.toFixed(1),
+      formatScore(s.performanceScore),
       s.date_pitched || s.pitch_date || '',
       `"${(comments[s.id] || '').replace(/"/g, '""')}"`,
     ]);
@@ -802,7 +918,7 @@ export default function StoryPitchAnalysis() {
                 <Link2 size={20} className="text-ls-orange" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{metrics.avgDA ?? '-'}</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics.avgDA ?? 'N/A'}</p>
                 <p className="text-sm text-gray-500">Avg Domain Authority</p>
               </div>
             </div>
@@ -813,7 +929,7 @@ export default function StoryPitchAnalysis() {
                 <Link2 size={20} className="text-purple-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{metrics.linksAbove80 ?? '-'}</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics.linksAbove80 ?? 'N/A'}</p>
                 <p className="text-sm text-gray-500">Links DA &gt; 80</p>
               </div>
             </div>
@@ -848,6 +964,10 @@ export default function StoryPitchAnalysis() {
           <span className="flex items-center gap-2">
             🔥 80+ links
           </span>
+          <span className="text-gray-500 ml-auto">
+            Score = weighted 0-100 across links, position, C/R, DA, O/R, Search Console and GA4 (28 days). Blank metrics are N/A and skipped.
+            {metricsLoading && ' Loading Search Console and GA4…'}
+          </span>
         </div>
       )}
 
@@ -870,6 +990,7 @@ export default function StoryPitchAnalysis() {
                   <SortableHeader column="brand" label="Brand" className="text-left !px-2 w-14" />
                   <SortableHeader column="study_title" label="Study Title" className="text-left min-w-[280px]" />
                   <th className="text-left px-4 py-3 text-sm font-semibold text-gray-700 border-b w-20">URL</th>
+                  <SortableHeader column="score" label="Score" />
                   <SortableHeader column="linkCount" label="Study<br/>Link #" />
                   <SortableHeader column="links2025" label="2025<br/>Link #" />
                   <SortableHeader column="links2024" label="2024<br/>Link #" />
@@ -896,7 +1017,7 @@ export default function StoryPitchAnalysis() {
                       </span>
                     </td>
                     <td className="px-2 py-3 text-sm text-gray-900 border-b w-14 whitespace-nowrap" title={row.brand || undefined}>
-                      {BRAND_ABBREVIATIONS[row.brand] || row.brand || '-'}
+                      {BRAND_ABBREVIATIONS[row.brand] || row.brand || NA}
                     </td>
                     <td className="px-4 py-3 text-sm border-b min-w-[280px] max-w-md">
                       <button
@@ -917,51 +1038,68 @@ export default function StoryPitchAnalysis() {
                         >
                           View <ExternalLink size={14} />
                         </a>
-                      ) : '-'}
+                      ) : NA}
+                    </td>
+                    <td
+                      className="px-3 py-3 text-sm border-b text-center"
+                      title={row.scoreDetail.score === null
+                        ? 'No metrics available to score'
+                        : `Score based on ${row.scoreDetail.availableCount} of ${row.scoreDetail.totalCount} metrics. Click the story for the breakdown.`}
+                    >
+                      {row.performanceScore === null ? NA : (
+                        <>
+                          <span className="font-bold text-gray-900">{formatScore(row.performanceScore)}</span>
+                          <span className="block text-[10px] leading-3 text-gray-400">
+                            {row.scoreDetail.availableCount}/{row.scoreDetail.totalCount}
+                          </span>
+                        </>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-bold">
-                      {row.linkCount || '-'}
+                      {row.linkCount || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-medium">
-                      {row.links2025 || '-'}
+                      {row.links2025 || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-medium">
-                      {row.links2024 || '-'}
+                      {row.links2024 || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-medium">
-                      {row.links2023 || '-'}
+                      {row.links2023 || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-medium">
-                      {row.links2022 || '-'}
+                      {row.links2022 || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center font-medium">
-                      {row.links2021 || '-'}
+                      {row.links2021 || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.avgDA || '-'}
+                      {row.avgDA ?? NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.national_o_r || '-'}
+                      {row.national_o_r || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.national_c_r || '-'}
+                      {row.national_c_r || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
-                      {row.date_pitched || row.pitch_date || '-'}
+                      {row.date_pitched || row.pitch_date || NA}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-900 border-b text-center">
-                      {metricsCache[row.id]?.avgPosition !== undefined
+                      {metricsCache[row.id]?.avgPosition > 0
                         ? formatPosition(metricsCache[row.id].avgPosition)
-                        : <span className="text-gray-400 text-xs">Click to load</span>}
+                        : metricsLoading
+                          ? <span className="text-gray-400 text-xs">Loading…</span>
+                          : NA}
                     </td>
                     <td className="px-3 py-3 text-sm border-b text-center">
                       {metricsCache[row.id]?.impressionsChange !== null && metricsCache[row.id]?.impressionsChange !== undefined ? (
                         <span className={getChangeClass(metricsCache[row.id].impressionsChange)}>
                           {getChangeArrow(metricsCache[row.id].impressionsChange)}{metricsCache[row.id].impressionsChange}%
                         </span>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Click to load</span>
-                      )}
+                      ) : metricsLoading ? (
+                        <span className="text-gray-400 text-xs">Loading…</span>
+                      ) : NA}
                     </td>
                   </tr>
                 ))}
@@ -985,17 +1123,17 @@ export default function StoryPitchAnalysis() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Brand</label>
-                  <p className="text-gray-900">{selectedStory.brand || '-'}</p>
+                  <p className="text-gray-900">{selectedStory.brand || 'N/A'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Date Pitched</label>
-                  <p className="text-gray-900">{selectedStory.date_pitched || selectedStory.pitch_date || '-'}</p>
+                  <p className="text-gray-900">{selectedStory.date_pitched || selectedStory.pitch_date || 'N/A'}</p>
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Study Title</label>
-                <p className="text-gray-900 font-medium">{selectedStory.study_title || '-'}</p>
+                <p className="text-gray-900 font-medium">{selectedStory.study_title || 'N/A'}</p>
               </div>
 
               <div>
@@ -1012,32 +1150,76 @@ export default function StoryPitchAnalysis() {
                 ) : <p className="text-gray-900">-</p>}
               </div>
 
+              {(() => {
+                const detail = (rankedData.find(r => r.id === selectedStory.id) || selectedStory).scoreDetail;
+                if (!detail) return null;
+                return (
+                  <div className="border-t pt-4">
+                    <div className="flex items-baseline justify-between mb-3">
+                      <h4 className="text-sm font-semibold text-gray-700">Performance Score</h4>
+                      <span className="text-2xl font-bold text-gray-900">
+                        {detail.score === null ? 'N/A' : formatScore(detail.score)}
+                        {detail.score !== null && <span className="text-sm font-normal text-gray-400"> / 100</span>}
+                      </span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500">
+                          <th className="py-1 font-medium">Metric</th>
+                          <th className="py-1 font-medium text-right">Value</th>
+                          <th className="py-1 font-medium text-right">Sub-score</th>
+                          <th className="py-1 font-medium text-right">Weight</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.breakdown.map(b => (
+                          <tr key={b.key} className={`border-t ${b.available ? 'text-gray-900' : 'text-gray-400'}`}>
+                            <td className="py-1">
+                              {b.label}
+                              {b.group !== 'core' && (
+                                <span className="ml-2 text-[10px] uppercase text-gray-400">{b.group === 'gsc' ? 'Search Console' : 'GA4'}</span>
+                              )}
+                            </td>
+                            <td className="py-1 text-right">{b.display}</td>
+                            <td className="py-1 text-right">{b.available ? Math.round(b.subScore) : 'N/A'}</td>
+                            <td className="py-1 text-right">{b.weight}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-xs text-gray-500 mt-2">
+                      N/A metrics are skipped and the remaining weights are rescaled, so missing data never lowers the score.
+                    </p>
+                  </div>
+                );
+              })()}
+
               <div className="border-t pt-4">
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Links by Year</h4>
                 <div className="grid grid-cols-6 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">2025</label>
-                    <p className="text-gray-900 font-medium">{selectedStory.links2025 || '-'}</p>
+                    <p className="text-gray-900 font-medium">{selectedStory.links2025 || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">2024</label>
-                    <p className="text-gray-900 font-medium">{selectedStory.links2024 || '-'}</p>
+                    <p className="text-gray-900 font-medium">{selectedStory.links2024 || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">2023</label>
-                    <p className="text-gray-900 font-medium">{selectedStory.links2023 || '-'}</p>
+                    <p className="text-gray-900 font-medium">{selectedStory.links2023 || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">2022</label>
-                    <p className="text-gray-900 font-medium">{selectedStory.links2022 || '-'}</p>
+                    <p className="text-gray-900 font-medium">{selectedStory.links2022 || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">2021</label>
-                    <p className="text-gray-900 font-medium">{selectedStory.links2021 || '-'}</p>
+                    <p className="text-gray-900 font-medium">{selectedStory.links2021 || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Total</label>
-                    <p className="text-gray-900 font-bold">{selectedStory.linkCount || '-'}</p>
+                    <p className="text-gray-900 font-bold">{selectedStory.linkCount || 'N/A'}</p>
                   </div>
                 </div>
               </div>
@@ -1047,15 +1229,15 @@ export default function StoryPitchAnalysis() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">National O/R</label>
-                    <p className="text-gray-900">{selectedStory.national_o_r || '-'}</p>
+                    <p className="text-gray-900">{selectedStory.national_o_r || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">National C/R</label>
-                    <p className="text-gray-900">{selectedStory.national_c_r || '-'}</p>
+                    <p className="text-gray-900">{selectedStory.national_c_r || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">National Sends</label>
-                    <p className="text-gray-900">{selectedStory.national_sends || '-'}</p>
+                    <p className="text-gray-900">{selectedStory.national_sends || 'N/A'}</p>
                   </div>
                 </div>
               </div>
@@ -1065,15 +1247,15 @@ export default function StoryPitchAnalysis() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Avg O/R Local</label>
-                    <p className="text-gray-900">{selectedStory.average_o_r_local || '-'}</p>
+                    <p className="text-gray-900">{selectedStory.average_o_r_local || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Avg C/R Local</label>
-                    <p className="text-gray-900">{selectedStory.average_c_r_local || '-'}</p>
+                    <p className="text-gray-900">{selectedStory.average_c_r_local || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Local Sends</label>
-                    <p className="text-gray-900">{selectedStory.local_sends || '-'}</p>
+                    <p className="text-gray-900">{selectedStory.local_sends || 'N/A'}</p>
                   </div>
                 </div>
               </div>
